@@ -341,11 +341,23 @@ void PWMDriverTeensy41::stopPwmHardware(void* params) {
       int sub = p->submodules[i];
       int ch  = p->channels[i];
 
-      // Disable outputs for this channel
-      flexpwm->SM[sub].OUTEN &= ~(1 << ch);
+      // Disable outputs for this channel on the shared OUTEN register
+      int submodule_mask = 1 << sub;
+      switch (ch) {
+        case 0:
+          flexpwm->OUTEN &= ~FLEXPWM_OUTEN_PWMX_EN(submodule_mask);
+          break;
+        case 1:
+          flexpwm->OUTEN &= ~FLEXPWM_OUTEN_PWMA_EN(submodule_mask);
+          break;
+        case 2:
+          flexpwm->OUTEN &= ~FLEXPWM_OUTEN_PWMB_EN(submodule_mask);
+          break;
+        default:
+          break;
+      }
 
       // Stop the submodule counter
-      int submodule_mask = 1 << sub ;
       flexpwm->MCTRL &= ~ FLEXPWM_MCTRL_RUN (submodule_mask) ;
   }
 }

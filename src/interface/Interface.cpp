@@ -11,7 +11,7 @@ Interface::Interface(StateMachine& _stateMachine, Motor& _motor)
 }
 
 
-void Interface::processCommand(uint8_t cmd, uint32_t data) {
+void Interface::processCommand(uint8_t cmd, float data) {
     switch (cmd) {
         case DISABLE_ENABLE_CMD:
             handleDisableEnable();
