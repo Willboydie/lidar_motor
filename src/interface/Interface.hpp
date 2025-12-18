@@ -4,6 +4,8 @@
 #include "state_machine/StateMachine.hpp"
 #include "motor/Motor.hpp"
 
+using SerialType = decltype(Serial);
+
 // state machine
 #define DISABLE_ENABLE_CMD 0b00000001
 #define SCAN_PLAY_PAUSE_CMD 0b00000010
@@ -18,6 +20,10 @@
 #define ANGLE_I_SET_CMD 0b00001101
 #define ANGLE_D_SET_CMD 0b00001110
 #define ANGLE_RAMP_SET_CMD 0b00001111
+#define SENSOR_VELOCITY_LPF_TAU_SET_CMD 0b00010011
+#define FOC_VOLTAGE_LPF_TAU_SET_CMD 0b00010001
+
+
 
 // target setters
 #define TARGET_SET_CMD 0b00010000
@@ -25,8 +31,11 @@
 
 class Interface {
 public:
-    Interface(StateMachine& _stateMachine, Motor& _motor);
+    Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor, Sensor& _sensor);
+    void init();
     void processCommand(uint8_t cmd, float data);
+    void commandListener();
+    void printStatus();
 
 private:
     void handleDisableEnable();
@@ -41,9 +50,13 @@ private:
     void handleAngleISet(float data);
     void handleAngleDSet(float data);
     void handleAngleRampSet(float data);
+    void handleSensorVelocityLPFSet(float data);
+    void handleFOCVoltageLPFSet(float data);
 
     StateMachine& stateMachine;
     Motor& motor;
+    Sensor& sensor;
+    SerialType& serial;
     uint8_t cmd;
     float data;
 };

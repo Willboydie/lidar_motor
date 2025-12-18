@@ -38,6 +38,7 @@ bool Motor::init() {
 
 
 bool Motor::loopFOC() {  // Things to add here: get sensor timestamp, get distance and timestamp from Garmin
+    if (!enabled) return false;
     if (!sensor._update()) {
         Serial.println("Failed to update sensor");
         return false;
@@ -69,7 +70,6 @@ void Motor::updateFOC() {
 
 
 void Motor::setPhaseVoltage() {
-
     // Sinusoidal PWM modulation
     // Inverse Park + Clarke transformation
     fast_sincos(electrical_angle, &_sa, &_ca);
@@ -96,13 +96,17 @@ void Motor::setPhaseVoltage() {
     Vb += center;
     Vc += center;
 
+    // Serial.println("Vq: " + String(Vq) + " Vd: " + String(Vd) + "  |   Va: " + String(Va) + " Vb: " + String(Vb) + " Vc: " + String(Vc));
     pwm_driver.setPwm(Va, Vb, Vc);
 }
 
 
 bool Motor::find_sensor_offset() {
     Serial.println("Finding sensor offset...");
-    pwm_driver.setPwm(ALIGNMENT_VOLTAGE, 0.0f, 0.0f); // Vq = ALIGNMENT_VOLTAGE, Vd = 0, angle_el = 0
+    Vq = 0.0f;
+    Vd = ALIGNMENT_VOLTAGE;
+    electrical_angle = 0.0f;
+    setPhaseVoltage();
     delay(1000);
     int sample_num = 0;
     float sample = 0.0f;
@@ -111,7 +115,7 @@ bool Motor::find_sensor_offset() {
         if (!sensor._update()) {
             return false;
         }
-        sample += sensor.getLatestAbsoluteRotorAngle();
+        sample += sensor.getLatestRotorAngle();
         sample_num ++;
     }
     sensor_offset = normalise_angle((sample * POLE_PAIRS * SENSOR_DIRECTION) / (float)sample_num);

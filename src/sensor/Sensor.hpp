@@ -18,6 +18,8 @@ public:
     float getAngularVelocity();
     unsigned long getLatestTimestamp();
 
+    void setSensorVelocityLPF(float _sensor_velocity_lpf) { angular_velocity_LPF.setTau(_sensor_velocity_lpf); }
+
 private:
 
     virtual float getSensorAngle() = 0;

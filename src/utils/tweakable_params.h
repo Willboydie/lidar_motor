@@ -21,17 +21,17 @@
 
 
 // PID Controllers 
-#define VELOCITY_P 0.05f
-#define VELOCITY_I 5.0f
+#define VELOCITY_P 2.0f
+#define VELOCITY_I 2.0f
 #define VELOCITY_D 0.0f
-#define VELOCITY_RAMP 1000.0f   // limit acceleration
+#define VELOCITY_RAMP 0.0f   // limit acceleration
 #define CURRENT_UPPER_LIMIT MOTOR_CURRENT_LIMIT
 #define CURRENT_LOWER_LIMIT -MOTOR_CURRENT_LIMIT
 // -------------------------------------------------
-#define ANGLE_P 1.0f
+#define ANGLE_P 10.0f
 #define ANGLE_I 0.0f
 #define ANGLE_D 0.0f
-#define ANGLE_RAMP 1000.0f
+#define ANGLE_RAMP 0.0f
 #define VELOCITY_UPPER_LIMIT 1.0f   // rad/s
 #define VELOCITY_LOWER_LIMIT -1.0f
 
@@ -39,7 +39,8 @@
 // Sensor Parameters
 #define SENSOR_OFFSET 4.03f // rad. Hardcoded offset for loaded motor.
 #define VELOCITY_MIN_TIME_INCREMENT 100 // 100us
-#define ANGULAR_VELOCITY_LPF_TAU 0.05f
+#define ANGULAR_VELOCITY_LPF_TAU 0.5f
+#define FOC_VOLTAGE_LPF_TAU 0.0f
 
 
 // Calibration Parameters

@@ -20,12 +20,15 @@ public:
     bool initFOC();
     bool loopFOC();
     void updateFOC();
+
     void setPhaseVoltage();
 
     float getAngularVelocity() { return angular_velocity; }
     float getMechanicalAngle() { return mechanical_angle; }
     float getElectricalAngle() { return electrical_angle; }
     float getAngularError() { return angular_error; }
+    float getVelocityError() { return velocity_error; }
+    float getTargetAngle() { return target_angle; }
     float getTargetVelocity() { return target_velocity; }
     float getTargetQCurrent() { return target_q_current; }
     float getTargetDCurrent() { return target_d_current; }
@@ -43,6 +46,7 @@ public:
     void setAngleI(float _angle_i) { PID_angle_controller.setI(_angle_i); }
     void setAngleD(float _angle_d) { PID_angle_controller.setD(_angle_d); }
     void setAngleRamp(float _angle_ramp) { PID_angle_controller.setRamp(_angle_ramp); }
+    void setFOCVoltageLPF(float _foc_voltage_lpf) { LPF_voltage.setTau(_foc_voltage_lpf); }
 
 
 private:
@@ -53,6 +57,7 @@ private:
     float calculate_electrical_angle();
     float estimate_Vq(float Iq);
     float normalise_angle(float angle);
+    
     
     // motor constants
     float sensor_offset; // hardcoded offset for loaded motor.
@@ -84,16 +89,18 @@ private:
     float Vb;
     float Vc;
 
-    // PID controllers
-    PIDControl PID_angle_controller{ANGLE_P, ANGLE_I, ANGLE_D, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT}; // angular error -> target velocity
-    PIDControl PID_velocity_controller{VELOCITY_P, VELOCITY_I, VELOCITY_D, VELOCITY_RAMP, CURRENT_LOWER_LIMIT, CURRENT_UPPER_LIMIT};  // velocity error -> target q current
-
-    _LowPassFilter LPF_voltage{0.005f};
-
     // FOC utils
     float _sa;
     float _ca;
     float center;
+
+
+    // PID controllers
+    PIDControl PID_angle_controller{ANGLE_P, ANGLE_I, ANGLE_D, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT}; // angular error -> target velocity
+    PIDControl PID_velocity_controller{VELOCITY_P, VELOCITY_I, VELOCITY_D, VELOCITY_RAMP, CURRENT_LOWER_LIMIT, CURRENT_UPPER_LIMIT};  // velocity error -> target q current
+
+    _LowPassFilter LPF_voltage{FOC_VOLTAGE_LPF_TAU};
+  
 
     bool enabled = false;
     ControlMode controlMode = ANGLE;

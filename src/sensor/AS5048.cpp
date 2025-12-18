@@ -15,9 +15,6 @@ bool AS5048::init(SPIClass* _spi) {
     pinMode(cs_pin, OUTPUT);
     digitalWrite(cs_pin, HIGH);
     spi->begin();
-    if (!this->Sensor::_update()) {
-        return false;
-    }
     return true;
 }
 
