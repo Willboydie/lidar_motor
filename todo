@@ -1,0 +1,44 @@
+
+LOWPASS FILTERING
+    1. Improve angular velocity calculation method
+    2. Research where best to place LPFs.
+    3. Tweak values and test.
+
+
+Parameter Control and Testing
+    2. Allow params to be tweaked from the testing UI.
+        - Add commands for changing PID params.
+
+
+Angular control tests:
+    2. Velocity control.
+    3. Angular control.
+    4. If it works: time to do a full clean of simpleFOC (congrats)
+
+
+Garmin
+    1. Create LDM Parent Class for distance reading retrieval
+    2. Garmin and Jenoptik child classes (similar to sensor class format)
+    3. Fetch distances and timestamps in loopFOC().
+
+
+DESTRUCTORS
+    Add proper destructors to each class.
+
+
+DATA TRANSFER
+    Find a way to swap data with the laptop (buffering?)
+
+
+A method for setting the angle offset: needed to map the sensors angles to the world plane.
+        1. Bring them to rest onto known physical extrema.
+        2. Set the offset such that after finding the edges (0, 0) is the true origin.
+        3. Constrain the target angle in the move() function
+
+
+Make sure micros() won't ever overflow.
+
+
+I M P R O V E M E N T S
+Integer arithmetic in the sensor update.
+Self optimising PID?
