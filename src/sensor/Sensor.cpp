@@ -1,6 +1,6 @@
 #include "Sensor.hpp"
 
-bool Sensor::_update() {
+bool Sensor::update() {
     
     timestamp1 = micros();
     float raw_sensor_angle = getSensorAngle();  // takes 5us on teensy 4.1

@@ -17,11 +17,7 @@ public:
     void deinit();
     void enable();
     void disable();
-    bool initFOC();
     bool loopFOC();
-    void updateFOC();
-
-    void setPhaseVoltage();
 
     float getAngularVelocity() { return angular_velocity; }
     float getMechanicalAngle() { return mechanical_angle; }
@@ -53,6 +49,8 @@ private:
     Sensor& sensor;
     PWMDriver& pwm_driver;
 
+    void updateFOC();
+    void setPhaseVoltage();
     bool find_sensor_offset();
     float calculate_electrical_angle();
     float estimate_Vq(float Iq);

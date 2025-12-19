@@ -12,7 +12,7 @@ public:
     virtual void deinit() = 0;
     void enable();
     void disable();
-    bool _update();
+    bool update();
     float getLatestAbsoluteRotorAngle();
     float getLatestRotorAngle();
     float getAngularVelocity();

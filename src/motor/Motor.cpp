@@ -19,7 +19,7 @@ bool Motor::init() {
         Serial.println("Failed to find sensor offset");
         return false;
     }
-    if (!sensor._update()) {
+    if (!sensor.update()) {
         Serial.println("Failed to update sensor");
         return false;
     }
@@ -39,7 +39,7 @@ bool Motor::init() {
 
 bool Motor::loopFOC() {  // Things to add here: get sensor timestamp, get distance and timestamp from Garmin
     if (!enabled) return false;
-    if (!sensor._update()) {
+    if (!sensor.update()) {
         Serial.println("Failed to update sensor");
         return false;
     }
@@ -112,7 +112,7 @@ bool Motor::find_sensor_offset() {
     float sample = 0.0f;
     unsigned long sample_time = millis();
     while (millis() - sample_time < 2000) {
-        if (!sensor._update()) {
+        if (!sensor.update()) {
             return false;
         }
         sample += sensor.getLatestRotorAngle();
