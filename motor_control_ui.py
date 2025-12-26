@@ -72,6 +72,11 @@ class MotorControlUI:
         self.status_label = ttk.Label(conn_frame, text="Disconnected", foreground="red")
         self.status_label.grid(row=0, column=6, padx=10)
 
+        ttk.Button(conn_frame, text="Clear Monitor", command=self.clear_monitor).grid(
+            row=0, column=7, padx=5, sticky="e"
+        )
+        conn_frame.grid_columnconfigure(7, weight=1)
+
         # Controls
         control_frame = ttk.LabelFrame(self.root, text="Interface Commands", padding=10)
         control_frame.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
@@ -79,7 +84,7 @@ class MotorControlUI:
         control_frame.grid_columnconfigure(1, weight=1)
 
         state_frame = ttk.LabelFrame(control_frame, text="State", padding=10)
-        state_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        state_frame.grid(row=0, column=0, padx=5, pady=5, sticky="new")
         ttk.Button(state_frame, text="Enable / Disable", command=self.handle_enable_toggle).grid(
             row=0, column=0, padx=5, pady=5
         )
@@ -91,14 +96,14 @@ class MotorControlUI:
         )
 
         velocity_frame = ttk.LabelFrame(control_frame, text="Velocity PID", padding=10)
-        velocity_frame.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        velocity_frame.grid(row=1, column=0, padx=5, pady=2, sticky="new")
         self.vel_p_entry = self._add_pid_row(velocity_frame, "P", 0, VELOCITY_P_SET_CMD)
         self.vel_i_entry = self._add_pid_row(velocity_frame, "I", 1, VELOCITY_I_SET_CMD)
         self.vel_d_entry = self._add_pid_row(velocity_frame, "D", 2, VELOCITY_D_SET_CMD)
         self.vel_ramp_entry = self._add_pid_row(velocity_frame, "Ramp", 3, VELOCITY_RAMP_SET_CMD)
 
         lpf_frame = ttk.LabelFrame(control_frame, text="Filters / LPF", padding=10)
-        lpf_frame.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        lpf_frame.grid(row=0, column=1, padx=5, pady=(0, 2), sticky="ew")
         self.sensor_vel_lpf_entry = self._add_pid_row(
             lpf_frame, "Sensor vel τ", 0, SENSOR_VELOCITY_LPF_TAU_SET_CMD
         )
@@ -107,7 +112,7 @@ class MotorControlUI:
         )
 
         angle_frame = ttk.LabelFrame(control_frame, text="Angle PID", padding=10)
-        angle_frame.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        angle_frame.grid(row=1, column=1, padx=5, pady=2, sticky="ew")
         self.ang_p_entry = self._add_pid_row(angle_frame, "P", 0, ANGLE_P_SET_CMD)
         self.ang_i_entry = self._add_pid_row(angle_frame, "I", 1, ANGLE_I_SET_CMD)
         self.ang_d_entry = self._add_pid_row(angle_frame, "D", 2, ANGLE_D_SET_CMD)
@@ -118,7 +123,7 @@ class MotorControlUI:
             text="Target (angle or velocity depends on firmware mode)",
             padding=10,
         )
-        target_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="ew")
+        target_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="new")
         ttk.Label(target_frame, text="Target value:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
         self.target_entry = ttk.Entry(target_frame, width=15)
         self.target_entry.insert(0, "0.0")
@@ -136,7 +141,7 @@ class MotorControlUI:
             monitor_frame, height=15, width=80, bg="black", fg="lime", font=("Courier", 9)
         )
         self.serial_text.grid(row=1, column=0, sticky="nsew")
-        ttk.Button(monitor_frame, text="Clear Monitor", command=self.clear_monitor).grid(row=2, column=0, pady=5)
+        monitor_frame.grid_columnconfigure(0, weight=1)
 
     def _add_pid_row(self, frame, label, row, command):
         ttk.Label(frame, text=f"{label}:").grid(row=row, column=0, padx=5, pady=3, sticky="e")

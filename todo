@@ -1,11 +1,7 @@
 
 
-Garmin
-    1. Create LDM Parent Class for distance reading retrieval
-    2. Garmin and Jenoptik child classes (similar to sensor class format)
-    3. Fetch distances and timestamps in loopFOC().
-    4. Although at first we use basic distance requests....
-            ... we move on to streaming the full correlation record for offsite processing.
+GARMIN
+    1. allow garmin config from the UI.
 
 
 DATA TRANSFER
@@ -18,12 +14,10 @@ ANGLE OFFSET
             3. Constrain the target angle in the move() function
 
 
-
-
-
 I M P R O V E M E N T S
 - Make sure micros() won't ever overflow.
 - Add proper destructors to each class.
 - Integer arithmetic in the sensor update.
 - Self optimising PID?
+- get signal strengths / confidence metrics from the sensor.
 - Exporting correlation records instead of distances.

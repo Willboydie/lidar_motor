@@ -14,6 +14,11 @@
 #define SENSOR_SPI_CS 15
 // // miso = 12, mosi = 11, sck = 13
 
+// Garmin Pins
+#define GARMIN_SCL 19
+#define GARMIN_SDA 18
+#define GARMIN_MODE_PIN 20  // MODE/STATUS pin for interrupt-driven readings
+
 // Motor Parameters
 #define POLE_PAIRS 7
 #define PHASE_RESISTANCE 9.0f

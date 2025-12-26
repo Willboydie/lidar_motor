@@ -1,10 +1,11 @@
 #include "Interface.hpp"
 
-Interface::Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor, Sensor& _sensor) 
+Interface::Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor, Sensor& _sensor, LDM& _ldm) 
 : serial(_serial)
 , stateMachine(_stateMachine)
 , motor(_motor)
 , sensor(_sensor)
+, ldm(_ldm)
 {}
 
 void Interface::init() {
@@ -26,6 +27,7 @@ void Interface::printStatus() {
     serial.print("  |  V error: " + String(motor.getVelocityError()));
     serial.print("  |  Target Iq: " + String(motor.getTargetQCurrent()));
     serial.print("  |  Vq: " + String(motor.getVq()));
+    serial.print("  |  LDM distance: " + String(ldm.getLatestDistance()));
     serial.println();
 }
 
@@ -97,10 +99,12 @@ void Interface::processCommand(uint8_t cmd, float data) {
 void Interface::handleDisableEnable() {
     if (stateMachine.enabled) {
         motor.disable();
+        ldm.disable();
         stateMachine.enabled = false;
         serial.println("Scanner disabled");
     } else {
         motor.enable();
+        ldm.enable();
         stateMachine.enabled = true;
         serial.println("Scanner enabled");
     }

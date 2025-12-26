@@ -3,6 +3,8 @@
 #include "Arduino.h"
 #include "state_machine/StateMachine.hpp"
 #include "motor/Motor.hpp"
+#include "ldm/LDM.hpp"
+#include "sensor/Sensor.hpp"
 
 using SerialType = decltype(Serial);
 
@@ -31,7 +33,7 @@ using SerialType = decltype(Serial);
 
 class Interface {
 public:
-    Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor, Sensor& _sensor);
+    Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor, Sensor& _sensor, LDM& _ldm);
     void init();
     void processCommand(uint8_t cmd, float data);
     void commandListener();
@@ -56,6 +58,7 @@ private:
     StateMachine& stateMachine;
     Motor& motor;
     Sensor& sensor;
+    LDM& ldm;
     SerialType& serial;
     uint8_t cmd;
     float data;
