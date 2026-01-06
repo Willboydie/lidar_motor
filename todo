@@ -1,23 +1,45 @@
-
-
-GARMIN
-    1. allow garmin config from the UI.
-
-
-DATA TRANSFER
-    Find a way to swap data with the laptop (buffering?)
+MOTOR2
+    1. Find definitive sensor offset of both motors (if it exists).
+        - Zero both motors
+        - Make sure offset is equal at any equilibrium
+    2. Get loaded motor working (isolate and debug).
 
 ANGLE OFFSET
     A method for setting the angle offset: needed to map the sensors angles to the world plane.
-            1. Bring them to rest onto known physical extrema.
-            2. Set the offset such that after finding the edges (0, 0) is the true origin.
-            3. Constrain the target angle in the move() function
+            1. Rewrite the sensor offset function
+            2. Bring them to rest onto known physical extrema.
+            3. Set the offset such that after finding the edges (0, 0) is the true origin.
+            4. Constrain the target angle in the move() function
+
+UI
+    1. Create a config page and an output dashboard page.
+
+ANGLULAR SCAN PATH 
+    1. Devise and implement a method for streaming / uploading / calculating the angular pathway.
+    2. Create a test routine
+    3. Plot actual vs expected paths for different PID constant values
+
+LiDAR CONFIG TESTING
+    1. Devise and integrate a "courseness"/speed parameter
+        - I think this will roughly be maximum velocity to begin with.
+        - More thinking upon this required. Ask Fraser.
+    2. Allow garmin config tweaks from the UI.
+    3. Take identical scans in the car park using each of the preset configs. 
 
 
 I M P R O V E M E N T S
 - Make sure micros() won't ever overflow.
 - Add proper destructors to each class.
 - Integer arithmetic in the sensor update.
+- Ship program to STM32 G4
+- Add current sensing
+
+G O A L S
 - Self optimising PID?
 - get signal strengths / confidence metrics from the sensor.
-- Exporting correlation records instead of distances.
+- Exporting correlation records + angle lists (+ timestamps?)
+
+
+
+ISSUES
+Renable stops readout data tracking.

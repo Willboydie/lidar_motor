@@ -10,6 +10,7 @@ public:
     PIDControl(float p, float i, float d, float _output_ramp, float _lower_limit, float _upper_limit);
     ~PIDControl() = default;
     float operator() (float error);
+    int32_t operator() (int32_t error);  // Integer overload - uses float internally for precision
     void reset();
     
     void setP(float _p) { P = _p; }

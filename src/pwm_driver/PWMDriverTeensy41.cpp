@@ -87,8 +87,8 @@ void* PWMDriverTeensy41::configureCenterAligned3PWM(long pwm_frequency,const int
     delayMicroseconds (100) ;
 
     
-    Serial.printf("TEENSY-CS: Syncing to Master FlexPWM: %d, Submodule: %d\n", flexpwm_to_index(flexpwmC), submoduleC);
-    Serial.printf("TEENSY-CS: Slave timers FlexPWM: %d, Submodule: %d and FlexPWM: %d, Submodule: %d\n", flexpwm_to_index(flexpwmA), submoduleA, flexpwm_to_index(flexpwmB), submoduleB);
+    // Serial.printf("TEENSY-CS: Syncing to Master FlexPWM: %d, Submodule: %d\n", flexpwm_to_index(flexpwmC), submoduleC);
+    // Serial.printf("TEENSY-CS: Slave timers FlexPWM: %d, Submodule: %d and FlexPWM: %d, Submodule: %d\n", flexpwm_to_index(flexpwmA), submoduleA, flexpwm_to_index(flexpwmB), submoduleB);
 
     // // turn on XBAR1 clock for all but stop mode
     xbar_init() ;
@@ -141,8 +141,8 @@ IMXRT_FLEXPWM_t* PWMDriverTeensy41::get_flexpwm(uint8_t pin){
     case 2: flexpwm = &IMXRT_FLEXPWM3; break;
     default: flexpwm = &IMXRT_FLEXPWM4;
   }
-  if(flexpwm != nullptr){
-    Serial.printf("TEENSY-DRV: Pin: %d on Flextimer %d.\n", pin, ((info->module >> 4) & 3) + 1);
+  if (flexpwm != nullptr){
+    // Serial.printf("TEENSY-DRV: Pin: %d on Flextimer %d.\n", pin, ((info->module >> 4) & 3) + 1);
     return flexpwm;
   } 
   return nullptr;
@@ -164,7 +164,7 @@ int PWMDriverTeensy41::get_submodule(uint8_t pin){
   int sm1 = info->module&0x3;
 
   if (sm1 >= 0 && sm1 < 4) {
-    Serial.printf("TEENSY-DRV: Pin %d on submodule %d.\n", pin, sm1);
+    // Serial.printf("TEENSY-DRV: Pin %d on submodule %d.\n", pin, sm1);
     return sm1;
   }  else  {
     Serial.printf("TEENSY-DRV: ERR: Pin: %d not in submodule!\n", pin);
@@ -185,7 +185,7 @@ int PWMDriverTeensy41::get_channel(uint8_t pin){
     Serial.printf("TEENSY-DRV: ERR: Pin: %d not Flextimer pin!\n", pin);
     return -1;
   }
-  Serial.printf("TEENSY-DRV: Pin: %d on channel %s.\n", pin, info->channel==0 ? "X" : info->channel==1 ? "A" : "B");
+  // Serial.printf("TEENSY-DRV: Pin: %d on channel %s.\n", pin, info->channel==0 ? "X" : info->channel==1 ? "A" : "B");
   return info->channel;
 }
 

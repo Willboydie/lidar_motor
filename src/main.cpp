@@ -1,36 +1,36 @@
 /// test imports
-// #include "tests/motor/motor_test.hpp"
-// #include "tests/control/angle_control.hpp"
-// #include "tests/sensor/sensor_test.hpp"
-// #include "tests/driver/driver_test.hpp"
-// #include "tests/sensor/finding_offset.hpp"
-// #include "tests/motor/pid_test.hpp"
-#include "tests/ldm/ldm_test.hpp"
-// #include "tests/ldm/i2c_test.hpp"
-// #include "tests/ldm/garmin_hardware_test.hpp"
+#include "tests/sensor/sensor_test.hpp"
+#include "tests/sensor/finding_offset.hpp"
+#include "tests/driver/driver_test.hpp"
 
-// #include "Arduino.h"
-// #include "interface/Interface.hpp"
-// #include "state_machine/StateMachine.hpp"
-// #include "motor/Motor.hpp"
-// #include "sensor/AS5048.hpp"
-// #include "pwm_driver/PWMDriverTeensy41.hpp"
-// #include "utils/tweakable_params.h"
-// #include "ldm/GarminV3HP.hpp"
+// main imports
+#include "Arduino.h"
+#include "interface/Interface.hpp"
+#include "state_machine/StateMachine.hpp"
+#include "motor/Motor.hpp"
+#include "sensor/AS5048.hpp"
+#include "pwm_driver/PWMDriverTeensy41.hpp"
+#include "utils/tweakable_params.h"
+#include "ldm/GarminV3HP.hpp"
+#include "data_stream/DataStream.hpp"
 
-// GarminV3HP ldm = GarminV3HP(GARMIN_SCL, GARMIN_SDA, GARMIN_MODE_PIN);
-// StateMachine stateMachine;
-// AS5048 sensor = AS5048(SENSOR_SPI_CS);
-// PWMDriverTeensy41 pwmDriver = PWMDriverTeensy41(N1, N2, N3, EN);
-// Motor motor(sensor, pwmDriver);
-// Interface interface(Serial, stateMachine, motor, sensor, ldm);
-
+GarminV3HP ldm = GarminV3HP(GARMIN_SCL, GARMIN_SDA, GARMIN_MODE_PIN);
+StateMachine stateMachine;
+AS5048 sensor1 = AS5048(SENSOR_SPI_CS_1);
+AS5048 sensor2 = AS5048(SENSOR_SPI_CS_2);
+PWMDriverTeensy41 pwmDriver1 = PWMDriverTeensy41(N1_1, N2_1, N3_1, EN_1);
+PWMDriverTeensy41 pwmDriver2 = PWMDriverTeensy41(N1_2, N2_2, N3_2, EN_2);
+Motor motor1(sensor1, pwmDriver1, 1);
+Motor motor2(sensor2, pwmDriver2, 2);
+Interface interface(Serial, stateMachine, motor1, motor2, sensor1, sensor2, ldm);
+DataStream dataStream(motor1, motor2, ldm);
 
 void setup() {
-  // interface.init();
-  // ldm.init();
-  // motor.init();
-  // Serial.println("System initialised. Enable to begin.");
+  interface.init();
+  ldm.init();
+  motor1.init();
+  motor2.init();
+  Serial.println("System initialised. Enable to begin.");
 
   // TESTS  (activate only one at a time)
   // sensor_test();
@@ -39,35 +39,37 @@ void setup() {
   // driver_test();
   // sensor_offset_test();
   // pid_test();
-  ldm_test();
+  // ldm_test();
   // i2c_test();
   // garmin_hardware_test();
-  
 }
-
-// int counter = 0;
-// int FOC_start_time = 0;
-// int FOC_duration = 0;
-
 
 void loop() {
-  // if (stateMachine.enabled) counter++;
-  // static unsigned long cmdTime = millis();
-  // if (millis() - cmdTime > 200) {
-  //   cmdTime = millis();
-  //   interface.printStatus();
-  //   interface.commandListener();
-  //   if (stateMachine.enabled) {
-  //     Serial.println("FOC duration: " + String(FOC_duration/counter) + " microseconds");
-  //     counter = 0;
-  //     FOC_duration = 0;
-  //   }
-  // }
+  static unsigned long cmdTime = millis();
+  if (millis() - cmdTime > 200) {
+    cmdTime = millis();
+    interface.commandListener();
+    if (stateMachine.enabled) {
+      Serial.println("Distance: " + String(ldm.getLatestDistance()) + "  |  Associated Angle 1: " + String(dataStream.associated_angle1, 3) + "  |  Associated Angle 2: " + String(dataStream.associated_angle2, 3));
+      // interface.printMotorStatus(motor1);
+      // interface.printMotorStatus(motor2);
+    }
+  }
 
-  // FOC_start_time = micros();
-  // motor.loopFOC();
-  // ldm.readSensor();
-  // FOC_duration += (micros() - FOC_start_time);
-  
-  delay(100);
+  if ( stateMachine.enabled ) {
+    motor1.loopFOC();
+    motor2.loopFOC();
+    if ( ldm.isDataReady() ) {
+      ldm.triggerMeasurement();
+      ldm.readDistance();
+      dataStream.sendData();
+    }
+  }
+  // delay(100);
 }
+
+// loop FOC and read sensor takes 8us on average (one motor)
+// in the office, the Garmin returns 300-400 measurements per second.
+// in the office, loopFOC is called 300-400 times per returned distance measurement.
+// FOC = 120KHz
+// LDM = 300-400Hz

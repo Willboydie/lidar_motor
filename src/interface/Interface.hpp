@@ -5,6 +5,7 @@
 #include "motor/Motor.hpp"
 #include "ldm/LDM.hpp"
 #include "sensor/Sensor.hpp"
+#include "utils/quick_defs.h"
 
 using SerialType = decltype(Serial);
 
@@ -25,25 +26,24 @@ using SerialType = decltype(Serial);
 #define SENSOR_VELOCITY_LPF_TAU_SET_CMD 0b00010011
 #define FOC_VOLTAGE_LPF_TAU_SET_CMD 0b00010001
 
-
-
 // target setters
-#define TARGET_SET_CMD 0b00010000
+#define TARGET_1_SET_CMD 0b00010000
+#define TARGET_2_SET_CMD 0b00010100
 
 
 class Interface {
 public:
-    Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor, Sensor& _sensor, LDM& _ldm);
+    Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor1, Motor& _motor2, Sensor& _sensor1, Sensor& _sensor2, LDM& _ldm);
     void init();
     void processCommand(uint8_t cmd, float data);
     void commandListener();
     void printStatus();
-
+    void printMotorStatus(Motor& motor);
 private:
     void handleDisableEnable();
-    void handleScanPlayPause();
     void handleToggleControlMode();
-    void handleTargetSet(float data);
+    void handleTarget1Set(float data);
+    void handleTarget2Set(float data);
     void handleVelocityPSet(float data);
     void handleVelocityISet(float data);
     void handleVelocityDSet(float data);
@@ -56,10 +56,12 @@ private:
     void handleFOCVoltageLPFSet(float data);
 
     StateMachine& stateMachine;
-    Motor& motor;
-    Sensor& sensor;
+    Motor& motor1;
+    Motor& motor2;
+    Sensor& sensor1;
+    Sensor& sensor2;
     LDM& ldm;
     SerialType& serial;
     uint8_t cmd;
-    float data;
+    float data; // temporary storage for command data
 };

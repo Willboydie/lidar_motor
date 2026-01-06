@@ -29,6 +29,23 @@ ANGLE_RAMP_SET_CMD = 0b00001111
 SENSOR_VELOCITY_LPF_TAU_SET_CMD = 0b00010011
 FOC_VOLTAGE_LPF_TAU_SET_CMD = 0b00010001
 TARGET_SET_CMD = 0b00010000
+TARGET_2_SET_CMD = 0b00010100
+
+# Default values mirrored from `src/utils/tweakable_params.h`
+DEFAULTS = {
+    "velocity_p": 1.0,
+    "velocity_i": 1.0,
+    "velocity_d": 0.0,
+    "velocity_ramp": 0.0,
+    "angle_p": 10.0,
+    "angle_i": 0.0,
+    "angle_d": 0.0,
+    "angle_ramp": 0.0,
+    "sensor_velocity_lpf_tau": 0.5,
+    "foc_voltage_lpf_tau": 0.0,
+    "target_1": 0.0,
+    "target_2": 0.0,
+}
 
 
 class MotorControlUI:
@@ -97,26 +114,26 @@ class MotorControlUI:
 
         velocity_frame = ttk.LabelFrame(control_frame, text="Velocity PID", padding=10)
         velocity_frame.grid(row=1, column=0, padx=5, pady=2, sticky="new")
-        self.vel_p_entry = self._add_pid_row(velocity_frame, "P", 0, VELOCITY_P_SET_CMD)
-        self.vel_i_entry = self._add_pid_row(velocity_frame, "I", 1, VELOCITY_I_SET_CMD)
-        self.vel_d_entry = self._add_pid_row(velocity_frame, "D", 2, VELOCITY_D_SET_CMD)
-        self.vel_ramp_entry = self._add_pid_row(velocity_frame, "Ramp", 3, VELOCITY_RAMP_SET_CMD)
+        self.vel_p_entry = self._add_pid_row(velocity_frame, "P", 0, VELOCITY_P_SET_CMD, "velocity_p")
+        self.vel_i_entry = self._add_pid_row(velocity_frame, "I", 1, VELOCITY_I_SET_CMD, "velocity_i")
+        self.vel_d_entry = self._add_pid_row(velocity_frame, "D", 2, VELOCITY_D_SET_CMD, "velocity_d")
+        self.vel_ramp_entry = self._add_pid_row(velocity_frame, "Ramp", 3, VELOCITY_RAMP_SET_CMD, "velocity_ramp")
 
         lpf_frame = ttk.LabelFrame(control_frame, text="Filters / LPF", padding=10)
         lpf_frame.grid(row=0, column=1, padx=5, pady=(0, 2), sticky="ew")
         self.sensor_vel_lpf_entry = self._add_pid_row(
-            lpf_frame, "Sensor vel τ", 0, SENSOR_VELOCITY_LPF_TAU_SET_CMD
+            lpf_frame, "Sensor vel τ", 0, SENSOR_VELOCITY_LPF_TAU_SET_CMD, "sensor_velocity_lpf_tau"
         )
         self.foc_voltage_lpf_entry = self._add_pid_row(
-            lpf_frame, "FOC voltage τ", 1, FOC_VOLTAGE_LPF_TAU_SET_CMD
+            lpf_frame, "FOC voltage τ", 1, FOC_VOLTAGE_LPF_TAU_SET_CMD, "foc_voltage_lpf_tau"
         )
 
         angle_frame = ttk.LabelFrame(control_frame, text="Angle PID", padding=10)
         angle_frame.grid(row=1, column=1, padx=5, pady=2, sticky="ew")
-        self.ang_p_entry = self._add_pid_row(angle_frame, "P", 0, ANGLE_P_SET_CMD)
-        self.ang_i_entry = self._add_pid_row(angle_frame, "I", 1, ANGLE_I_SET_CMD)
-        self.ang_d_entry = self._add_pid_row(angle_frame, "D", 2, ANGLE_D_SET_CMD)
-        self.ang_ramp_entry = self._add_pid_row(angle_frame, "Ramp", 3, ANGLE_RAMP_SET_CMD)
+        self.ang_p_entry = self._add_pid_row(angle_frame, "P", 0, ANGLE_P_SET_CMD, "angle_p")
+        self.ang_i_entry = self._add_pid_row(angle_frame, "I", 1, ANGLE_I_SET_CMD, "angle_i")
+        self.ang_d_entry = self._add_pid_row(angle_frame, "D", 2, ANGLE_D_SET_CMD, "angle_d")
+        self.ang_ramp_entry = self._add_pid_row(angle_frame, "Ramp", 3, ANGLE_RAMP_SET_CMD, "angle_ramp")
 
         target_frame = ttk.LabelFrame(
             control_frame,
@@ -124,11 +141,20 @@ class MotorControlUI:
             padding=10,
         )
         target_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="new")
-        ttk.Label(target_frame, text="Target value:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        
+        # Motor 1 target
+        ttk.Label(target_frame, text="Motor 1:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
         self.target_entry = ttk.Entry(target_frame, width=15)
-        self.target_entry.insert(0, "0.0")
+        self.target_entry.insert(0, str(DEFAULTS.get("target_1", 0.0)))
         self.target_entry.grid(row=0, column=1, padx=5, pady=5)
-        ttk.Button(target_frame, text="Send Target", command=self.send_target).grid(row=0, column=2, padx=5, pady=5)
+        ttk.Button(target_frame, text="Send", command=self.send_target).grid(row=0, column=2, padx=5, pady=5)
+        
+        # Motor 2 target
+        ttk.Label(target_frame, text="Motor 2:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.target_2_entry = ttk.Entry(target_frame, width=15)
+        self.target_2_entry.insert(0, str(DEFAULTS.get("target_2", 0.0)))
+        self.target_2_entry.grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(target_frame, text="Send", command=self.send_target_2).grid(row=1, column=2, padx=5, pady=5)
 
         # Serial Monitor
         monitor_frame = ttk.Frame(control_frame)
@@ -143,10 +169,10 @@ class MotorControlUI:
         self.serial_text.grid(row=1, column=0, sticky="nsew")
         monitor_frame.grid_columnconfigure(0, weight=1)
 
-    def _add_pid_row(self, frame, label, row, command):
+    def _add_pid_row(self, frame, label, row, command, default_key):
         ttk.Label(frame, text=f"{label}:").grid(row=row, column=0, padx=5, pady=3, sticky="e")
         entry = ttk.Entry(frame, width=10)
-        entry.insert(0, "0.0")
+        entry.insert(0, str(DEFAULTS.get(default_key, 0.0)))
         entry.grid(row=row, column=1, padx=5, pady=3)
         ttk.Button(frame, text="Set", command=lambda e=entry, cmd=command: self.send_pid_value(e, cmd)).grid(
             row=row, column=2, padx=5, pady=3
@@ -239,9 +265,14 @@ class MotorControlUI:
         self.send_packet(TOGGLE_CONTROL_MODE_CMD, 0.0)
 
     def send_target(self):
-        value = self._read_float(self.target_entry, "target")
+        value = self._read_float(self.target_entry, "target_1")
         if value is not None:
             self.send_packet(TARGET_SET_CMD, value)
+
+    def send_target_2(self):
+        value = self._read_float(self.target_2_entry, "target 2")
+        if value is not None:
+            self.send_packet(TARGET_2_SET_CMD, value)
 
     def send_pid_value(self, entry, command):
         value = self._read_float(entry, "PID value")

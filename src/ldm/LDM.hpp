@@ -3,8 +3,6 @@
 #include "Arduino.h"
 #include <Wire.h>
 
-#define I2C_CLOCK_SPEED 400000
-
 class LDM {
 
 public:
@@ -18,10 +16,8 @@ public:
     bool isDataReady() { return dataReady; }      // Check if ready (non-blocking)
     bool readDistance();                          // Read result (only call when ready)
     
-    // Legacy polling API (kept for compatibility)
-    bool readSensor();
-
-    unsigned long getLatestTimestamp() { return latest_timestamp; }
+    // returns the midpoint between the ready and trigger timestamps: our best estimate of the measurement timestamp
+    // unsigned long getLatestTimestamp() { return (unsigned long)( (ready_timestamp + trigger_timestamp) / 2 ); }
     uint16_t getLatestDistance() { return latest_distance_cm; }
     bool isEnabled() { return enabled; }
 
@@ -30,15 +26,15 @@ public:
 
 protected:
     volatile bool dataReady = false;     // Set by interrupt
-    bool busy = true;                    // For legacy polling mode
     uint16_t latest_distance_cm;
-    unsigned long latest_timestamp;
+    // unsigned long ready_timestamp;
+    // unsigned long trigger_timestamp;
+
     int MODE_PIN;
 
 private:
     virtual void requestDistance() = 0;
     virtual void readLatestDistance() = 0;
-    virtual void pollStatus() = 0;
 
     int SCL;
     int SDA;

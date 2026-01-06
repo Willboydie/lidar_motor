@@ -1,10 +1,9 @@
 #include "Motor.hpp"
 
-Motor::Motor(Sensor& _sensor, PWMDriver& _pwm_driver) : sensor(_sensor), pwm_driver(_pwm_driver) {};
-
+Motor::Motor(Sensor& _sensor, PWMDriver& _pwm_driver, int _motor_number) : sensor(_sensor), pwm_driver(_pwm_driver), motor_number(_motor_number) {};
 
 bool Motor::init() {
-    Serial.println("Initialising motor...");
+    Serial.println("Initialising motor " + String(motor_number) + "...");
 
     if (!sensor.init()) {
         Serial.println("Failed to initialize sensor");
@@ -15,14 +14,24 @@ bool Motor::init() {
         return false;
     }
 
-    if (!find_sensor_offset()) {  // this won't work if the motor is loaded. For now we hardcode loaded motor offsets (4.03rad)
-        Serial.println("Failed to find sensor offset");
-        return false;
+    Serial.print("Using hardcoded sensor offset: ");
+    if (motor_number == 1) {
+        Serial.println(String(SENSOR_OFFSET_1) + " angle units (motor 1)");
+    } else if (motor_number == 2) {
+        Serial.println(String(SENSOR_OFFSET_2) + " angle units (motor 2)");
     }
+    electrical_offset = motor_number == 1 ? SENSOR_OFFSET_1 : SENSOR_OFFSET_2;
+
+    // if (!findElectricalOffset()) {
+    //     Serial.println("Failed to find electrical offset");
+    //     return false;
+    // }
+
     if (!sensor.update()) {
         Serial.println("Failed to update sensor");
         return false;
     }
+
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
     target_angle = mechanical_angle;
@@ -32,7 +41,7 @@ bool Motor::init() {
     phase_resistance = PHASE_RESISTANCE;
     K_v = K_V;
     K_e = K_E;
-    Serial.println("Motor initialised. Starting mechanical angle: " + String(mechanical_angle) + " rad");
+    Serial.println("Motor " + String(motor_number) + " initialised. Starting mechanical angle: " + String(mechanical_angle, 3) + " rad");
     return true;
 }
 
@@ -46,6 +55,11 @@ bool Motor::loopFOC() {  // Things to add here: get sensor timestamp, get distan
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
     angular_velocity = sensor.getAngularVelocity();
+
+    if ( angle_count < ANGLE_TRACKING_LIMIT ) {
+        angle_tracking[angle_count] = mechanical_angle;
+        angle_count++;
+    }
 
     updateFOC();
 
@@ -62,6 +76,7 @@ void Motor::updateFOC() {
   
     velocity_error = target_velocity - angular_velocity;
     target_q_current = PID_velocity_controller(velocity_error);
+    target_q_current = _constrain(target_q_current, -MOTOR_CURRENT_LIMIT, MOTOR_CURRENT_LIMIT);
     Vq = estimate_Vq(target_q_current);
     Vq = LPF_voltage(Vq);
     Vq = _constrain(Vq, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT);
@@ -90,7 +105,6 @@ void Motor::setPhaseVoltage() {
     float Vmin = min(Va, min(Vb, Vc));
     float Vmax = max(Va, max(Vb, Vc));
     center -= (Vmax+Vmin) / 2;
-
       
     Va += center;
     Vb += center;
@@ -101,31 +115,51 @@ void Motor::setPhaseVoltage() {
 }
 
 
-bool Motor::find_sensor_offset() {
-    Serial.println("Finding sensor offset...");
-    Vq = 0.0f;
-    Vd = ALIGNMENT_VOLTAGE;
-    electrical_angle = 0.0f;
-    setPhaseVoltage();
+// bool Motor::findMechanicalOffset() {
+//     Serial.println("Finding mechanical offset...");
+//     unsigned long start_time = millis();
+//     int sample_num = 0;
+//     int64_t sample = 0;
+//     while (millis() - start_time < 2000) {
+//         if (!sensor.update()) {
+//             return false;
+//         }
+//         sample += sensor.getLatestRotorAngle();
+//         sample_num ++;
+//     }
+//     mechanical_offset = sample / sample_num;
+//     Serial.println("Mechanical offset found: " + String(mechanical_offset) + " units");
+//     return true;
+// }
+
+
+bool Motor::findElectricalOffset() {
+    Serial.println("Finding electrical offset...");
+
+    float Id = MOTOR_CURRENT_LIMIT * 0.5f;
+    float Vd = Id * PHASE_RESISTANCE;
+    Serial.println("Setting alignment voltage to: " + String(Vd) + " V");
+    setPhaseVoltage(0.0f, Vd, 0.0f); // Vq = 0, Vd = ALIGNMENT_VOLTAGE, angle_el = 0
     delay(1000);
-    int sample_num = 0;
-    float sample = 0.0f;
-    unsigned long sample_time = millis();
-    while (millis() - sample_time < 2000) {
-        if (!sensor.update()) {
-            return false;
-        }
-        sample += sensor.getLatestRotorAngle();
-        sample_num ++;
+
+    float angle = 0.0f;
+    float sample_offset = 0.0f;
+    int count = 0;
+    unsigned long start_time = millis();
+    while (millis() - start_time < 5000) {
+        sensor.update();
+        angle = sensor.getLatestRotorAngle();
+        sample_offset += angle;
+        count++;
     }
-    sensor_offset = normalise_angle((sample * POLE_PAIRS * SENSOR_DIRECTION) / (float)sample_num);
-    Serial.println("Sensor offset found: " + String(sensor_offset) + " rad");
+    electrical_offset = normalise_angle((sample_offset * POLE_PAIRS * SENSOR_DIRECTION) / (float)count);
+    Serial.println("Electrical offset found: " + String(electrical_offset) + " units");
     return true;
 }
 
 
 float Motor::calculate_electrical_angle() {
-    return normalise_angle(mechanical_angle * POLE_PAIRS * SENSOR_DIRECTION - sensor_offset);
+    return normalise_angle(mechanical_angle * POLE_PAIRS * SENSOR_DIRECTION - electrical_offset);
 }
 
 
@@ -133,13 +167,6 @@ float Motor::estimate_Vq(float _Iq) {
     Vq = _Iq * phase_resistance + (angular_velocity / (K_v * _SQRT3) / _RPM_TO_RADS);
     return Vq;
 }
-
-
-// normalizing radian angle to [0,2PI]
-float Motor::normalise_angle(float angle){
-    float a = fmod(angle, _2PI);
-    return a >= 0 ? a : (a + _2PI);
-  }
 
 
 void Motor::enable() {

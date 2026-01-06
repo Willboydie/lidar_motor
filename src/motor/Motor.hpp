@@ -12,7 +12,7 @@
 
 class Motor {
 public:
-    Motor(Sensor& _sensor, PWMDriver& _pwm_driver);
+    Motor(Sensor& _sensor, PWMDriver& _pwm_driver, int _motor_number);
     bool init();
     void deinit();
     void enable();
@@ -30,6 +30,8 @@ public:
     float getTargetDCurrent() { return target_d_current; }
     float getVq() { return Vq; }
     float getVd() { return Vd; }
+    float getMechanicalOffset() { return mechanical_offset; }
+    float getElectricalOffset() { return electrical_offset; }
 
     void setControlMode(ControlMode _controlMode) { controlMode = _controlMode; }
     void setTargetAngle(float _target_angle) { target_angle = _target_angle; }
@@ -44,21 +46,28 @@ public:
     void setAngleRamp(float _angle_ramp) { PID_angle_controller.setRamp(_angle_ramp); }
     void setFOCVoltageLPF(float _foc_voltage_lpf) { LPF_voltage.setTau(_foc_voltage_lpf); }
 
+    void resetAngleTracking() { angle_count = 0; }
+    // Angle Tracking
+    float angle_tracking[ANGLE_TRACKING_LIMIT];
+    int angle_count = 0;
+    const int motor_number;
+    float estimate_Vq(float Iq);
 
+    void setPhaseVoltage(float _Vq, float _Vd, float _angle_el) { Vq = _Vq; Vd = _Vd; electrical_angle = _angle_el; setPhaseVoltage(); }
 private:
     Sensor& sensor;
     PWMDriver& pwm_driver;
 
     void updateFOC();
     void setPhaseVoltage();
-    bool find_sensor_offset();
+    bool findMechanicalOffset();
+    bool findElectricalOffset();
     float calculate_electrical_angle();
-    float estimate_Vq(float Iq);
-    float normalise_angle(float angle);
-    
+
     
     // motor constants
-    float sensor_offset; // hardcoded offset for loaded motor.
+    float electrical_offset; // hardcoded offset for loaded motor.
+    float mechanical_offset;
     float phase_resistance;
     float K_v;
     float K_e;
@@ -69,6 +78,7 @@ private:
     float electrical_angle;
     float angular_error;
     float velocity_error;
+
 
     // FOC Targets
     float target_angle;

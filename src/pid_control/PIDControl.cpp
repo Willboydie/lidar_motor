@@ -40,7 +40,7 @@ float PIDControl::operator() (float error){
     output = _constrain(output, lower_limit, upper_limit);
 
     // if output ramp defined
-    if(output_ramp > 0){
+    if ( output_ramp > 0.0f ) {
         // limit the acceleration by ramping the output
         float output_rate = (output - output_prev) / Ts;
         if (output_rate > output_ramp)
@@ -61,3 +61,9 @@ void PIDControl::reset() {
     output_prev = 0.0f;
     error_prev = 0.0f;
 }
+
+// // Integer overload - converts to float internally for precision, returns rounded int32_t
+// int32_t PIDControl::operator() (int32_t error) {
+//     float result = (*this)(static_cast<float>(error));
+//     return static_cast<int32_t>(result);
+// }

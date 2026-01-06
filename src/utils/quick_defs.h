@@ -3,6 +3,7 @@
 
 #include "Arduino.h"
 #include "constants.h"
+#include "tweakable_params.h"
 
 // functions
 #define _sign(a) ( ( (a) < 0 )  ?  -1   : ( (a) > 0 ) )
@@ -17,6 +18,14 @@
 #define _powtwo(x) (1 << (x))
 
 #define _swap(a, b) { auto temp = a; a = b; b = temp; }
+
+static inline float toRadians(float angle) { return angle * _2PI / (float)CPR; }
+
+// normalizing radian angle to [0,2PI]
+static inline float normalise_angle(float angle){
+  float a = fmod(angle, _2PI);
+  return a >= 0 ? a : (a + _2PI);
+}
 
 
 // function approximating the sine calculation by using fixed size array

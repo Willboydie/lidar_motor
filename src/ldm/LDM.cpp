@@ -28,31 +28,17 @@ void LDM::disable() {
 
 void LDM::onMeasurementReady() {
     dataReady = true;
-    latest_timestamp = micros();  // Capture time immediately in ISR
+    // ready_timestamp = micros();  // Capture time immediately in ISR
 }
 
 void LDM::triggerMeasurement() {
     if (!enabled) return;
     dataReady = false;
     requestDistance();
+    // trigger_timestamp = micros();
 }
 
 bool LDM::readDistance() {
-    if (!dataReady) return false;
     readLatestDistance();
-    dataReady = false;
     return true;
-}
-
-// Legacy polling API - kept for compatibility
-bool LDM::readSensor() {
-    if (!enabled) return false;
-    pollStatus();
-    if (!busy) {
-        latest_timestamp = micros();
-        requestDistance();
-        readLatestDistance();
-        return true;
-    }
-    return false;
 }

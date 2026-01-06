@@ -1,27 +1,31 @@
 #include "Sensor.hpp"
 
 bool Sensor::update() {
-    
-    timestamp1 = micros();
-    float raw_sensor_angle = getSensorAngle();  // takes 5us on teensy 4.1
-    if (raw_sensor_angle < 0) {
+    if (!initialised) {
+        Serial.println("Sensor not initialised");
         return false;
     }
+    timestamp1 = micros();
+    uint16_t raw_sensor_angle = getRawCount();  // takes 5us on teensy 4.1
  
-    float angle_change = raw_sensor_angle - absolute_rotor_angle;
+    if (!first_measurement) {
+        int32_t angle_change = raw_sensor_angle - absolute_rotor_angle;
+        // Handle wrapping
+        if (abs(angle_change) > (3 * CPR / 4)) cumulated_rotations += (angle_change > 0) ? -1 : 1;
+    } else {
+        first_measurement = false;
+        cumulated_rotations = 0;
+    }
 
-    // Handle wrapping
-    if (abs(angle_change) > _3PI_2) cumulated_rotations += (angle_change > 0) ? -1 : 1;
     absolute_rotor_angle = raw_sensor_angle;
 
-    rotor_angle1 = absolute_rotor_angle + cumulated_rotations * _2PI;
-    // rotor_angle1 = sensor_denoising_filter(rotor_angle1);
+    rotor_angle1 = absolute_rotor_angle + cumulated_rotations * CPR; // multiply by (1 << 14) to get the raw integer value
     // this will obviously break if the rotor turns at more than 270 degrees per update.
     // As I expect to be updating at >10KHz, this won't be a problem.
 
-    time_delta = timestamp1 - timestamp0;
+    unsigned long time_delta = timestamp1 - timestamp0;
     if (time_delta > VELOCITY_MIN_TIME_INCREMENT) {
-        angular_velocity = (rotor_angle1 - rotor_angle0) / ((float)time_delta) * 1e6f;
+        angular_velocity = (rotor_angle1 - rotor_angle0) * 1e6 / time_delta;
         angular_velocity = angular_velocity_LPF(angular_velocity);
         rotor_angle0 = rotor_angle1;
         timestamp0 = timestamp1;
@@ -31,16 +35,17 @@ bool Sensor::update() {
 }
 
 
+
 float Sensor::getLatestAbsoluteRotorAngle() {
-    return absolute_rotor_angle;
+    return toRadians(absolute_rotor_angle);
 }
 
 float Sensor::getLatestRotorAngle() {
-    return rotor_angle1;
+    return toRadians(rotor_angle1);
 }
 
 float Sensor::getAngularVelocity() {
-    return angular_velocity;
+    return toRadians(angular_velocity);
 }
 
 unsigned long Sensor::getLatestTimestamp() {

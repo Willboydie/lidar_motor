@@ -18,13 +18,7 @@ void GarminV3HP::init() {
 }
 
 /*------------------------------------------------------------------------------
-  Configure
-
-  Selects one of several preset configurations.
-
-  Parameters
-  ------------------------------------------------------------------------------
-  configuration:  Default 0.
+  Configure Parameters
     0: Default mode, balanced performance.
     1: Short range, high speed. Uses 0x1d maximum acquisition count.
     2: Default range, higher speed short range. Turns on quick termination
@@ -110,14 +104,6 @@ void GarminV3HP::configure() {
 void GarminV3HP::requestDistance() {
     uint8_t data_byte = 0x01;
     write(0x00, &data_byte, 1);
-}
-
-
-void GarminV3HP::pollStatus() {
-    uint8_t busy_byte;
-    read(0x01, &busy_byte, 1);
-    // Status register bit0 is "busy"; other bits may be set for health/info.
-    busy = (busy_byte & 0x01) != 0;
 }
 
 
@@ -209,11 +195,10 @@ void GarminV3HP::resetReferenceFilter() {
     write(0x12, data_bytes, 1); // write ref integration count
 
     // Trigger a measurement
-    while (busy) {
-        pollStatus();
+    requestDistance();
+    while ( !isDataReady() ) {
         delay(100);
     }
-    requestDistance();
     // ... no need to read the distance, it is immaterial
 
     // Restore previous reference integration count

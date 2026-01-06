@@ -15,19 +15,13 @@ bool AS5048::init(SPIClass* _spi) {
     pinMode(cs_pin, OUTPUT);
     digitalWrite(cs_pin, HIGH);
     spi->begin();
+    initialised = true;
     return true;
 }
 
-
-float AS5048::getSensorAngle(){
-    float angle = (getRawCount() / (float)CPR) * _2PI;
-    // angle = round(angle * 1000.0f) / 1000.0f;  // keeps 3 decimal places
-    return angle;
-}
-
  
-int AS5048::getRawCount(){
-
+uint16_t AS5048::getRawCount() {
+    
     word command = ANGLE_REGISTER;
 
     if (COMMAND_RW_BIT > 0) {
@@ -61,7 +55,7 @@ int AS5048::getRawCount(){
 
     const static word data_mask = 0xFFFF >> (16 - BIT_RESOLUTION);
 
-    return (int)(register_value & data_mask);  // Return the data, stripping the non data (e.g parity) bits
+    return (uint16_t)(register_value & data_mask);  // Return the data, stripping the non data (e.g parity) bits
 }
 
 

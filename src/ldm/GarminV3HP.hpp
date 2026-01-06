@@ -15,14 +15,12 @@ public:
 
 // private:
     void requestDistance() override;
-    void pollStatus() override;
     void readLatestDistance() override;
 
 private:
     void write(uint8_t reg, uint8_t* data_bytes, uint8_t length);
     void read(uint8_t reg, uint8_t* data_bytes, uint8_t length);
     void configure();
-    void reset();
     void resetReferenceFilter();
 
 

@@ -2,22 +2,24 @@
 #define TWEAKABLE_PARAMS_H
 
 // Pins
-// #define N1 2  // Adjust based on your driver connection
-// #define N2 3 // Adjust based on your driver connection
-// #define N3 6 // Adjust based on your driver connection
-// #define EN 22 // If your driver has an enable pin
-// #define SENSOR_SPI_CS 10
-#define N1 7  // Adjust based on your driver connection
-#define N2 8 // Adjust based on your driver connection
-#define N3 9 // Adjust based on your driver connection
-#define EN 23 // If your driver has an enable pin
-#define SENSOR_SPI_CS 15
-// // miso = 12, mosi = 11, sck = 13
+// motor 1
+#define N1_1 7  // orange
+#define N2_1 8 // yellow
+#define N3_1 9 // green
+#define EN_1 23 // blue
+#define SENSOR_SPI_CS_1 10 // white
+// motor 2
+#define N1_2 6  // orange
+#define N2_2 36 // yellow
+#define N3_2 37 // green
+#define EN_2 22 // blue
+#define SENSOR_SPI_CS_2 15 // white
+// // miso = 12 (yellow), mosi = 11 (black), sck = 13 (red)
 
 // Garmin Pins
-#define GARMIN_SCL 19
-#define GARMIN_SDA 18
-#define GARMIN_MODE_PIN 20  // MODE/STATUS pin for interrupt-driven readings
+#define GARMIN_SCL 19 // green
+#define GARMIN_SDA 18 // blue
+#define GARMIN_MODE_PIN 20  // MODE/STATUS pin for interrupt-driven readings (yellow)
 
 // Motor Parameters
 #define POLE_PAIRS 7
@@ -47,10 +49,13 @@
 
 
 // Sensor Parameters
-#define SENSOR_OFFSET 4.03f // rad. Hardcoded offset for loaded motor.
+#define SENSOR_OFFSET_1  5.67f // angle units
+#define SENSOR_OFFSET_2 4.02f // angle units
 #define VELOCITY_MIN_TIME_INCREMENT 100 // 100us
-#define ANGULAR_VELOCITY_LPF_TAU 0.5f
+#define ANGULAR_VELOCITY_LPF_TAU 0.33f
 #define FOC_VOLTAGE_LPF_TAU 0.0f
+#define BIT_RESOLUTION 14
+#define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 
 
 // Calibration Parameters
@@ -60,6 +65,10 @@
 // PWM Driver Parameters
 #define PWM_FREQUENCY 25000 // 25khz
 #define PWM_FREQUENCY_MAX 50000 // 50khz
+
+// Angle Tracking Parameters
+#define ANGLE_TRACKING_LIMIT 5000
+#define ANGLE_TRACKING_WINDOW_SIZE 100
 
 
 #endif
