@@ -3,16 +3,16 @@
 
 // Pins
 // motor 1
-#define N1_1 7  // orange
-#define N2_1 8 // yellow
-#define N3_1 9 // green
-#define EN_1 23 // blue
+#define N1_1 6  // orange
+#define N2_1 36 // yellow
+#define N3_1 37 // green
+#define EN_1 22 // blue
 #define SENSOR_SPI_CS_1 10 // white
 // motor 2
-#define N1_2 6  // orange
-#define N2_2 36 // yellow
-#define N3_2 37 // green
-#define EN_2 22 // blue
+#define N1_2 7  // orange
+#define N2_2 8 // yellow
+#define N3_2 9 // green
+#define EN_2 23 // blue
 #define SENSOR_SPI_CS_2 15 // white
 // // miso = 12 (yellow), mosi = 11 (black), sck = 13 (red)
 

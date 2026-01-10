@@ -2,17 +2,24 @@
 SimpleFOC Interface Control UI
 Tkinter app that sends Interface command packets (1 byte command + 4 byte
 little-endian float) so it matches the firmware `Interface` class.
+Also receives and displays DataPacket sensor readings.
 """
 
 import struct
 import threading
 import time
 import tkinter as tk
+from collections import deque
 from queue import Queue
 from tkinter import scrolledtext, ttk
 
 import serial
 import serial.tools.list_ports
+
+# Incoming data packet identifier (from DataStream.cpp)
+SEND_DATA_CMD = 0x55  # 0b01010101
+DATA_PACKET_SIZE = 11  # 1 (cmd) + 2 (distance) + 4 (angle1) + 4 (angle2)
+DATA_PACKET_FORMAT = "<BHff"  # little-endian: uint8, uint16, float, float
 
 # Command IDs mirrored from `src/interface/Interface.hpp`
 DISABLE_ENABLE_CMD = 0b00000001
@@ -52,16 +59,21 @@ class MotorControlUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Interface Command UI")
-        self.root.geometry("900x650")
+        self.root.geometry("950x700")
 
         self.serial_port = None
         self.is_connected = False
         self.read_thread = None
         self.running = False
         self.message_queue = Queue()
+        self.data_queue = Queue()
+        
+        # Ring buffer for recent data points (for potential plotting)
+        self.data_history = deque(maxlen=1000)
 
         self.setup_ui()
         self.update_serial_monitor()
+        self.update_sensor_display()
 
     # ---------- UI SETUP ----------
     def setup_ui(self):
@@ -105,9 +117,6 @@ class MotorControlUI:
         ttk.Button(state_frame, text="Enable / Disable", command=self.handle_enable_toggle).grid(
             row=0, column=0, padx=5, pady=5
         )
-        ttk.Button(state_frame, text="Scan Play / Pause", command=self.handle_scan_toggle).grid(
-            row=0, column=1, padx=5, pady=5
-        )
         ttk.Button(state_frame, text="Toggle Control Mode", command=self.handle_mode_toggle).grid(
             row=0, column=2, padx=5, pady=5
         )
@@ -137,10 +146,10 @@ class MotorControlUI:
 
         target_frame = ttk.LabelFrame(
             control_frame,
-            text="Target (angle or velocity depends on firmware mode)",
+            text="Target",
             padding=10,
         )
-        target_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky="new")
+        target_frame.grid(row=2, column=0, padx=5, pady=5, sticky="new")
         
         # Motor 1 target
         ttk.Label(target_frame, text="Motor 1:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
@@ -155,6 +164,37 @@ class MotorControlUI:
         self.target_2_entry.insert(0, str(DEFAULTS.get("target_2", 0.0)))
         self.target_2_entry.grid(row=1, column=1, padx=5, pady=5)
         ttk.Button(target_frame, text="Send", command=self.send_target_2).grid(row=1, column=2, padx=5, pady=5)
+
+        # Sensor Data Display
+        sensor_frame = ttk.LabelFrame(control_frame, text="Sensor Data (Live)", padding=10)
+        sensor_frame.grid(row=2, column=1, padx=5, pady=5, sticky="new")
+        
+        ttk.Label(sensor_frame, text="Distance (cm):").grid(row=0, column=0, padx=5, pady=3, sticky="e")
+        self.distance_var = tk.StringVar(value="---")
+        ttk.Label(sensor_frame, textvariable=self.distance_var, font=("Courier", 11, "bold"), width=10).grid(
+            row=0, column=1, padx=5, pady=3, sticky="w"
+        )
+        
+        ttk.Label(sensor_frame, text="Angle 1 (rad):").grid(row=1, column=0, padx=5, pady=3, sticky="e")
+        self.angle1_var = tk.StringVar(value="---")
+        ttk.Label(sensor_frame, textvariable=self.angle1_var, font=("Courier", 11, "bold"), width=10).grid(
+            row=1, column=1, padx=5, pady=3, sticky="w"
+        )
+        
+        ttk.Label(sensor_frame, text="Angle 2 (rad):").grid(row=2, column=0, padx=5, pady=3, sticky="e")
+        self.angle2_var = tk.StringVar(value="---")
+        ttk.Label(sensor_frame, textvariable=self.angle2_var, font=("Courier", 11, "bold"), width=10).grid(
+            row=2, column=1, padx=5, pady=3, sticky="w"
+        )
+        
+        ttk.Label(sensor_frame, text="Packets/sec:").grid(row=3, column=0, padx=5, pady=3, sticky="e")
+        self.packet_rate_var = tk.StringVar(value="0")
+        ttk.Label(sensor_frame, textvariable=self.packet_rate_var, font=("Courier", 9), width=10).grid(
+            row=3, column=1, padx=5, pady=3, sticky="w"
+        )
+        
+        self.packet_count = 0
+        self.last_rate_time = time.time()
 
         # Serial Monitor
         monitor_frame = ttk.Frame(control_frame)
@@ -229,18 +269,78 @@ class MotorControlUI:
         self.status_label.config(text="Disconnected", foreground="red")
         self.connect_btn.config(text="Connect")
         self.log_message("=== Disconnected ===\n")
+        
+        # Reset sensor display
+        self.distance_var.set("---")
+        self.angle1_var.set("---")
+        self.angle2_var.set("---")
+        self.packet_rate_var.set("0")
+        self.packet_count = 0
 
     def read_serial(self):
+        """
+        Read serial data, parsing both text output and binary DataPackets.
+        Uses a buffer-based state machine for efficient mixed-mode parsing.
+        """
+        buffer = bytearray()
+        
         while self.running and self.serial_port:
             try:
-                if self.serial_port.in_waiting > 0:
-                    data = self.serial_port.readline().decode("utf-8", errors="ignore")
-                    self.message_queue.put(data)
+                # Read all available bytes at once (efficient)
+                waiting = self.serial_port.in_waiting
+                if waiting > 0:
+                    buffer.extend(self.serial_port.read(waiting))
+                
+                # Process buffer
+                while len(buffer) > 0:
+                    # Check for binary packet (starts with SEND_DATA_CMD)
+                    if buffer[0] == SEND_DATA_CMD:
+                        if len(buffer) >= DATA_PACKET_SIZE:
+                            # Extract and parse complete packet
+                            packet_bytes = bytes(buffer[:DATA_PACKET_SIZE])
+                            buffer = buffer[DATA_PACKET_SIZE:]
+                            
+                            try:
+                                _, distance, angle1, angle2 = struct.unpack(
+                                    DATA_PACKET_FORMAT, packet_bytes
+                                )
+                                self.data_queue.put((distance, angle1, angle2))
+                            except struct.error:
+                                # Malformed packet, skip the command byte
+                                buffer = buffer[1:]
+                        else:
+                            # Incomplete packet, wait for more data
+                            break
+                    else:
+                        # Text data - find end boundary (newline or next packet marker)
+                        newline_idx = buffer.find(b'\n')
+                        packet_idx = buffer.find(bytes([SEND_DATA_CMD]), 1)
+                        
+                        if newline_idx >= 0 and (packet_idx < 0 or newline_idx < packet_idx):
+                            # Newline comes first - extract text line
+                            end_idx = newline_idx + 1
+                        elif packet_idx >= 0:
+                            # Packet marker found - extract text before it
+                            end_idx = packet_idx
+                        elif len(buffer) > 512:
+                            # Buffer too large with no clear boundary - flush
+                            end_idx = len(buffer)
+                        else:
+                            # No boundary found, wait for more data
+                            break
+                        
+                        text = buffer[:end_idx].decode("utf-8", errors="ignore")
+                        buffer = buffer[end_idx:]
+                        
+                        if text.strip():
+                            self.message_queue.put(text if text.endswith('\n') else text + '\n')
+                
             except Exception as e:
                 if self.running:
                     self.message_queue.put(f"Read error: {str(e)}\n")
                 break
-            time.sleep(0.01)
+            
+            time.sleep(0.001)  # Short sleep for responsiveness
 
     # ---------- COMMANDS ----------
     def send_packet(self, command, value=0.0):
@@ -288,11 +388,48 @@ class MotorControlUI:
             return None
 
     def update_serial_monitor(self):
-        while not self.message_queue.empty():
-            message = self.message_queue.get()
+        # Batch process text messages (limit per cycle to keep UI responsive)
+        for _ in range(100):
+            if self.message_queue.empty():
+                break
+            message = self.message_queue.get_nowait()
             self.serial_text.insert(tk.END, message)
-            self.serial_text.see(tk.END)
+        
+        self.serial_text.see(tk.END)
         self.root.after(50, self.update_serial_monitor)
+    
+    def update_sensor_display(self):
+        """Process incoming sensor data packets and update display."""
+        packets_this_cycle = 0
+        latest_data = None
+        
+        # Drain the queue, keeping only the latest reading for display
+        while not self.data_queue.empty():
+            try:
+                latest_data = self.data_queue.get_nowait()
+                self.data_history.append(latest_data)
+                packets_this_cycle += 1
+            except:
+                break
+        
+        # Update display with latest values
+        if latest_data is not None:
+            distance, angle1, angle2 = latest_data
+            self.distance_var.set(f"{distance}")
+            self.angle1_var.set(f"{angle1:.3f}")
+            self.angle2_var.set(f"{angle2:.3f}")
+        
+        # Update packet rate counter
+        self.packet_count += packets_this_cycle
+        now = time.time()
+        elapsed = now - self.last_rate_time
+        if elapsed >= 1.0:
+            rate = self.packet_count / elapsed
+            self.packet_rate_var.set(f"{rate:.1f}")
+            self.packet_count = 0
+            self.last_rate_time = now
+        
+        self.root.after(16, self.update_sensor_display)  # ~60 Hz UI update
 
     def log_message(self, message):
         self.serial_text.insert(tk.END, message)

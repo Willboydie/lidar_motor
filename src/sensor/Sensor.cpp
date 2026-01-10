@@ -5,7 +5,7 @@ bool Sensor::update() {
         Serial.println("Sensor not initialised");
         return false;
     }
-    timestamp1 = micros();
+    timestamp1 = micros();  //overflow protection?
     uint16_t raw_sensor_angle = getRawCount();  // takes 5us on teensy 4.1
  
     if (!first_measurement) {
@@ -23,7 +23,7 @@ bool Sensor::update() {
     // this will obviously break if the rotor turns at more than 270 degrees per update.
     // As I expect to be updating at >10KHz, this won't be a problem.
 
-    unsigned long time_delta = timestamp1 - timestamp0;
+    long time_delta = timestamp1 - timestamp0;
     if (time_delta > VELOCITY_MIN_TIME_INCREMENT) {
         angular_velocity = (rotor_angle1 - rotor_angle0) * 1e6 / time_delta;
         angular_velocity = angular_velocity_LPF(angular_velocity);
@@ -55,6 +55,7 @@ unsigned long Sensor::getLatestTimestamp() {
 void Sensor::enable() {
     if (enabled) return;
     enabled = true;
+    first_measurement = true;  // Reset angle tracking state when re-enabling
 }
 
 void Sensor::disable() {

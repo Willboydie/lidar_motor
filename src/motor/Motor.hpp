@@ -46,14 +46,16 @@ public:
     void setAngleRamp(float _angle_ramp) { PID_angle_controller.setRamp(_angle_ramp); }
     void setFOCVoltageLPF(float _foc_voltage_lpf) { LPF_voltage.setTau(_foc_voltage_lpf); }
 
-    void resetAngleTracking() { angle_count = 0; }
     // Angle Tracking
+    void resetAngleTracking() { angle_count = 0; }
     float angle_tracking[ANGLE_TRACKING_LIMIT];
     int angle_count = 0;
     const int motor_number;
+
     float estimate_Vq(float Iq);
 
-    void setPhaseVoltage(float _Vq, float _Vd, float _angle_el) { Vq = _Vq; Vd = _Vd; electrical_angle = _angle_el; setPhaseVoltage(); }
+    // void setPhaseVoltage(float _Vq, float _Vd, float _angle_el) { Vq = _Vq; Vd = _Vd; electrical_angle = _angle_el; setPhaseVoltage(); }
+
 private:
     Sensor& sensor;
     PWMDriver& pwm_driver;

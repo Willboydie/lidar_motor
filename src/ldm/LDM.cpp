@@ -17,6 +17,8 @@ void LDM::enable() {
     enabled = true;
     ldmInstance = this;
     attachInterrupt(digitalPinToInterrupt(MODE_PIN), ldmISR, RISING);
+    dataReady = false;  // Reset state when re-enabling
+    triggerMeasurement();  // Trigger initial measurement
 }
 
 void LDM::disable() {
@@ -28,14 +30,12 @@ void LDM::disable() {
 
 void LDM::onMeasurementReady() {
     dataReady = true;
-    // ready_timestamp = micros();  // Capture time immediately in ISR
 }
 
 void LDM::triggerMeasurement() {
     if (!enabled) return;
     dataReady = false;
     requestDistance();
-    // trigger_timestamp = micros();
 }
 
 bool LDM::readDistance() {

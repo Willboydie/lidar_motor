@@ -39,6 +39,7 @@ public:
     void commandListener();
     void printStatus();
     void printMotorStatus(Motor& motor);
+    
 private:
     void handleDisableEnable();
     void handleToggleControlMode();

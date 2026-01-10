@@ -1,7 +1,8 @@
 /// test imports
-#include "tests/sensor/sensor_test.hpp"
-#include "tests/sensor/finding_offset.hpp"
-#include "tests/driver/driver_test.hpp"
+// #include "tests/sensor/sensor_test.hpp"
+// #include "tests/sensor/finding_offset.hpp"
+// #include "tests/driver/driver_test.hpp"
+// #include "tests/scan_path/sine_path_test.hpp"
 
 // main imports
 #include "Arduino.h"
@@ -11,8 +12,10 @@
 #include "sensor/AS5048.hpp"
 #include "pwm_driver/PWMDriverTeensy41.hpp"
 #include "utils/tweakable_params.h"
+#include "utils/constants.h"
 #include "ldm/GarminV3HP.hpp"
 #include "data_stream/DataStream.hpp"
+#include "scan_path/ScanPath.hpp"
 
 GarminV3HP ldm = GarminV3HP(GARMIN_SCL, GARMIN_SDA, GARMIN_MODE_PIN);
 StateMachine stateMachine;
@@ -24,8 +27,11 @@ Motor motor1(sensor1, pwmDriver1, 1);
 Motor motor2(sensor2, pwmDriver2, 2);
 Interface interface(Serial, stateMachine, motor1, motor2, sensor1, sensor2, ldm);
 DataStream dataStream(motor1, motor2, ldm);
+// SinusoidalScanPath scanPath(10000, 10, _PI, _PI);
+// SinusoidalScanPath(uint16_t _FOC_loops_per_phi_step, uint16_t _num_vertical_oscillations, float _horizontal_fov, float _vertical_fov)
 
 void setup() {
+
   interface.init();
   ldm.init();
   motor1.init();
@@ -35,13 +41,13 @@ void setup() {
   // TESTS  (activate only one at a time)
   // sensor_test();
   // motor_test();
-  // angle_control_test();
   // driver_test();
   // sensor_offset_test();
   // pid_test();
   // ldm_test();
   // i2c_test();
-  // garmin_hardware_test();
+  // sine_path_test();
+
 }
 
 void loop() {
@@ -49,11 +55,6 @@ void loop() {
   if (millis() - cmdTime > 200) {
     cmdTime = millis();
     interface.commandListener();
-    if (stateMachine.enabled) {
-      Serial.println("Distance: " + String(ldm.getLatestDistance()) + "  |  Associated Angle 1: " + String(dataStream.associated_angle1, 3) + "  |  Associated Angle 2: " + String(dataStream.associated_angle2, 3));
-      // interface.printMotorStatus(motor1);
-      // interface.printMotorStatus(motor2);
-    }
   }
 
   if ( stateMachine.enabled ) {
@@ -65,7 +66,7 @@ void loop() {
       dataStream.sendData();
     }
   }
-  // delay(100);
+  // delay(100);s
 }
 
 // loop FOC and read sensor takes 8us on average (one motor)

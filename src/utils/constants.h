@@ -11,6 +11,7 @@
 #define _PI 3.14159265359f
 #define _PI_2 1.57079632679f
 #define _PI_3 1.0471975512f
+#define _PI_4 0.7853981634f
 #define _2PI 6.28318530718f
 #define _3PI_2 4.71238898038f
 #define _PI_6 0.52359877559f

@@ -133,29 +133,29 @@ void Motor::setPhaseVoltage() {
 // }
 
 
-bool Motor::findElectricalOffset() {
-    Serial.println("Finding electrical offset...");
+// bool Motor::findElectricalOffset() {
+//     Serial.println("Finding electrical offset...");
 
-    float Id = MOTOR_CURRENT_LIMIT * 0.5f;
-    float Vd = Id * PHASE_RESISTANCE;
-    Serial.println("Setting alignment voltage to: " + String(Vd) + " V");
-    setPhaseVoltage(0.0f, Vd, 0.0f); // Vq = 0, Vd = ALIGNMENT_VOLTAGE, angle_el = 0
-    delay(1000);
+//     float Id = MOTOR_CURRENT_LIMIT * 0.5f;
+//     float Vd = Id * PHASE_RESISTANCE;
+//     Serial.println("Setting alignment voltage to: " + String(Vd) + " V");
+//     setPhaseVoltage(0.0f, Vd, 0.0f); // Vq = 0, Vd = ALIGNMENT_VOLTAGE, angle_el = 0
+//     delay(1000);
 
-    float angle = 0.0f;
-    float sample_offset = 0.0f;
-    int count = 0;
-    unsigned long start_time = millis();
-    while (millis() - start_time < 5000) {
-        sensor.update();
-        angle = sensor.getLatestRotorAngle();
-        sample_offset += angle;
-        count++;
-    }
-    electrical_offset = normalise_angle((sample_offset * POLE_PAIRS * SENSOR_DIRECTION) / (float)count);
-    Serial.println("Electrical offset found: " + String(electrical_offset) + " units");
-    return true;
-}
+//     float angle = 0.0f;
+//     float sample_offset = 0.0f;
+//     int count = 0;
+//     unsigned long start_time = millis();
+//     while (millis() - start_time < 5000) {
+//         sensor.update();
+//         angle = sensor.getLatestRotorAngle();
+//         sample_offset += angle;
+//         count++;
+//     }
+//     electrical_offset = normalise_angle((sample_offset * POLE_PAIRS * SENSOR_DIRECTION) / (float)count);
+//     Serial.println("Electrical offset found: " + String(electrical_offset) + " units");
+//     return true;
+// }
 
 
 float Motor::calculate_electrical_angle() {
