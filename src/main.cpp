@@ -27,8 +27,8 @@ Motor motor1(sensor1, pwmDriver1, 1);
 Motor motor2(sensor2, pwmDriver2, 2);
 Interface interface(Serial, stateMachine, motor1, motor2, sensor1, sensor2, ldm);
 DataStream dataStream(motor1, motor2, ldm);
-// SinusoidalScanPath scanPath(10000, 10, _PI, _PI);
-// SinusoidalScanPath(uint16_t _FOC_loops_per_phi_step, uint16_t _num_vertical_oscillations, float _horizontal_fov, float _vertical_fov)
+SinusoidalScanPath scanPath(100, 10, _PI, _PI);
+SinusoidalScanPath(FOC_loops_per_phi_step, num_vertical_oscillations, horizontal_fov, vertical_fov)
 
 void setup() {
 
@@ -66,7 +66,7 @@ void loop() {
       dataStream.sendData();
     }
   }
-  // delay(100);s
+  // delay(100);
 }
 
 // loop FOC and read sensor takes 8us on average (one motor)

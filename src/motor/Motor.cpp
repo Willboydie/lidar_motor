@@ -1,6 +1,10 @@
 #include "Motor.hpp"
 
-Motor::Motor(Sensor& _sensor, PWMDriver& _pwm_driver, int _motor_number) : sensor(_sensor), pwm_driver(_pwm_driver), motor_number(_motor_number) {};
+Motor::Motor(Sensor& _sensor, PWMDriver& _pwm_driver, int _motor_number) 
+: motor_number(_motor_number)
+, sensor(_sensor)
+, pwm_driver(_pwm_driver)
+{};
 
 bool Motor::init() {
     Serial.println("Initialising motor " + String(motor_number) + "...");
@@ -45,8 +49,7 @@ bool Motor::init() {
     return true;
 }
 
-
-bool Motor::loopFOC() {  // Things to add here: get sensor timestamp, get distance and timestamp from Garmin
+bool Motor::loopFOC() {
     if (!enabled) return false;
     if (!sensor.update()) {
         Serial.println("Failed to update sensor");
@@ -69,6 +72,7 @@ bool Motor::loopFOC() {  // Things to add here: get sensor timestamp, get distan
 
 
 void Motor::updateFOC() {
+
     if (controlMode == ANGLE) {
         angular_error = target_angle - mechanical_angle; // TODO: constrain the target angle
         target_velocity = PID_angle_controller(angular_error);
@@ -183,4 +187,14 @@ void Motor::disable() {
     pwm_driver.disable();
     sensor.disable();
     enabled = false;
+}
+
+
+void setTargetAngle(float _target_world_angle) { 
+    float target_local_angle = worldToLocal(_target_world_angle); 
+    target_angle = target_local_angle; 
+}
+
+float worldToLocal(float world_angle) {
+    return motor_number == 1 ? world_angle - WORLD_OFFSET_X : world_angle - WORLD_OFFSET_Y;
 }

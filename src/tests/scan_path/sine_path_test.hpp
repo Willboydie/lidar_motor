@@ -4,7 +4,7 @@
 
 
 void sine_path_test() {
-    SinusoidalScanPath scanPath(100, 10, _PI_4, _PI_4);
+    SinusoidalScanPath scanPath(500, 10, _PI_4, _PI_4);
     delay(1000);
     Serial.print("Theta Period: " + String(scanPath.theta_period));
     Serial.println(" | Phi Period: " + String(scanPath.phi_period));

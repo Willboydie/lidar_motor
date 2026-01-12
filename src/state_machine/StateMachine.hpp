@@ -1,7 +1,7 @@
 #pragma once
 
-
 enum ControlMode {
+    PATH,
     ANGLE,
     VELOCITY
 };

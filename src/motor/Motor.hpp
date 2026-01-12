@@ -34,7 +34,7 @@ public:
     float getElectricalOffset() { return electrical_offset; }
 
     void setControlMode(ControlMode _controlMode) { controlMode = _controlMode; }
-    void setTargetAngle(float _target_angle) { target_angle = _target_angle; }
+    void setTargetAngle(float _target_world_angle);
     void setTargetVelocity(float _target_velocity) { target_velocity = _target_velocity; }
     void setVelocityP(float _velocity_p) { PID_velocity_controller.setP(_velocity_p); }
     void setVelocityI(float _velocity_i) { PID_velocity_controller.setI(_velocity_i); }
@@ -62,10 +62,9 @@ private:
 
     void updateFOC();
     void setPhaseVoltage();
-    bool findMechanicalOffset();
-    bool findElectricalOffset();
+    // bool findMechanicalOffset();
+    // bool findElectricalOffset();
     float calculate_electrical_angle();
-
     
     // motor constants
     float electrical_offset; // hardcoded offset for loaded motor.

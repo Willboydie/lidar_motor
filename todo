@@ -18,6 +18,7 @@ LiDAR CONFIG TESTING
 I M P R O V E M E N T S
 - Add proper destructors to each class.
 - Implement the entire "backend" with integer arithmetic.
+- Create a FOC controller class to take those responsabilities from Motor
 - Ship program to STM32 G4
 - Add current sensing
 
@@ -28,5 +29,4 @@ G O A L S
 
 
 ISSUES
-Renable stops readout data tracking (latest patch unsuccessful)
 electrical offset test rig

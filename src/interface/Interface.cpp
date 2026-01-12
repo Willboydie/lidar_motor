@@ -1,13 +1,13 @@
 #include "Interface.hpp"
 
 Interface::Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor1, Motor& _motor2, Sensor& _sensor1, Sensor& _sensor2, LDM& _ldm) 
-: serial(_serial)
-, stateMachine(_stateMachine)
+: stateMachine(_stateMachine)
 , motor1(_motor1)
 , motor2(_motor2)
 , sensor1(_sensor1)
 , sensor2(_sensor2)
 , ldm(_ldm)
+, serial(_serial)
 {}
 
 void Interface::init() {
@@ -42,7 +42,7 @@ void Interface::printStatus() {
 void Interface::commandListener() {
     if (serial.available() >= 5) {
         uint8_t cmdByte = serial.read();
-        uint8_t buffer[4];
+        char buffer[4];
         size_t readCount = serial.readBytes(buffer, 4);
         if (readCount == 4) {
             float value;
@@ -121,10 +121,19 @@ void Interface::handleDisableEnable() {
 
 
 void Interface::handleToggleControlMode() {
-    stateMachine.controlMode = stateMachine.controlMode == ANGLE ? VELOCITY : ANGLE;
-    motor1.setControlMode(stateMachine.controlMode);
-    motor2.setControlMode(stateMachine.controlMode);
-    serial.println("Control mode toggled to: " + String(stateMachine.controlMode == ANGLE ? "ANGLE" : "VELOCITY"));
+    if (stateMachine.controlMode == ANGLE) {
+        motor1.setControlMode(VELOCITY);
+        motor2.setControlMode(VELOCITY);
+        serial.println("Control mode toggled to: VELOCITY");
+        return;
+    }
+    else if (stateMachine.controlMode == VELOCITY) {
+        motor1.setControlMode(ANGLE);
+        motor2.setControlMode(ANGLE);
+        serial.println("Control mode toggled to: ANGLE");
+        return;
+    }
+    return;
 }
 
 
