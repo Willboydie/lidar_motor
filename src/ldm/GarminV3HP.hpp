@@ -21,6 +21,7 @@ private:
     void write(uint8_t reg, uint8_t* data_bytes, uint8_t length);
     void read(uint8_t reg, uint8_t* data_bytes, uint8_t length);
     void configure();
+    void reconfigure(int config_num);
     void resetReferenceFilter();
 
 

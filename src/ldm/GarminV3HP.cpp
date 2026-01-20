@@ -100,6 +100,17 @@ void GarminV3HP::configure() {
 }
 
 
+void GarminV3HP::reconfigure(int config_num) {
+    if (enabled) {
+        Serial.println("Disable the Garmin first to change the configuration.");
+        return;
+    }
+    config_number = config_num;
+    configure();
+    Serial.println("Garmin V3HP configured to preset " + String(config_number));
+}
+
+
 
 void GarminV3HP::requestDistance() {
     uint8_t data_byte = 0x01;

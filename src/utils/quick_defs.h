@@ -21,6 +21,8 @@
 
 static inline float toRadians(float angle) { return angle * _2PI / (float)CPR; }
 
+static inline float worldToLocal(int motor_number, float world_angle) { return motor_number == 1 ? -world_angle + WORLD_OFFSET_X : -world_angle + WORLD_OFFSET_Y; }
+
 // normalizing radian angle to [0,2PI]
 static inline float normalise_angle(float angle){
   float a = fmod(angle, _2PI);

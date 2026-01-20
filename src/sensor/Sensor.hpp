@@ -8,9 +8,10 @@
 
 class Sensor {
 public:
+    virtual ~Sensor() = default;
     
     virtual bool init() = 0;
-    virtual void deinit() = 0; // TODO: implement this
+    virtual void deinit() = 0;
     
     void enable();
     void disable();

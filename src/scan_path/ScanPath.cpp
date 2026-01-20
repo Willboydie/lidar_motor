@@ -2,21 +2,29 @@
 
 
 void ScanPath::update() {
-    step_count++;
+    static uint32_t next_tick_us = micros();
 
-    if ( step_count % theta_period == 0 ) {
-        theta_phase = (theta_phase + 1) % num_phases;
-        theta = calcTargetTheta();
+    uint32_t now = micros();
+
+    // Catch up if we are behind (hard RT approximation)
+    while ((int32_t)(now - next_tick_us) >= 0) {
+
+        // Advance phases deterministically
+        theta_phase = (theta_phase + theta_phase_inc);
+        phi_phase = (phi_phase + phi_phase_inc);
+
+        // Schedule next tick
+        next_tick_us += UPDATE_PERIOD_US;
     }
 
-    if ( step_count % phi_period == 0 ) {
-        phi_phase = (phi_phase + 1) % num_phases;
-        phi = calcTargetPhi();
-    }
+    // Compute targets
+    theta = calcTargetTheta();
+    phi   = calcTargetPhi();
 }
 
-float ScanPath::calcTargetTheta() { return static_cast<float>(lookUpTheta()) * theta_limit / 32767.0f;  }
-float ScanPath::calcTargetPhi() { return static_cast<float>(lookUpPhi()) * phi_limit / 32767.0f;  }
 
-int16_t SinusoidalScanPath::lookUpTheta() { return sin_q15_u16(theta_phase); }
-int16_t SinusoidalScanPath::lookUpPhi() { return sin_q15_u16(phi_phase); }
+float ScanPath::calcTargetTheta() { return static_cast<float>(lookUpTheta()) * theta_amplitude / 32767.0f + theta_centre; }
+float ScanPath::calcTargetPhi() { return static_cast<float>(lookUpPhi()) * phi_amplitude / 32767.0f + phi_centre; }
+
+int16_t SinusoidalScanPath::lookUpTheta() { return sin_q15_u32(theta_phase); }
+int16_t SinusoidalScanPath::lookUpPhi() { return sin_q15_u32(phi_phase); }

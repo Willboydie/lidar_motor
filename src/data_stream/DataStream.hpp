@@ -1,7 +1,12 @@
+#pragma once
+
 #include "Arduino.h"
+#include "../foc_controller/FOCController.hpp"
 #include "../motor/Motor.hpp"
 #include "../ldm/LDM.hpp"
+#include "../scan_path/ScanPath.hpp"
 #include "../utils/tweakable_params.h"
+#include "../utils/quick_defs.h"
 
 #pragma pack(push, 1)
 struct DataPacket {
@@ -9,20 +14,21 @@ struct DataPacket {
     uint16_t distance;
     float angle1;
     float angle2;
+    float target1;
+    float target2;
 };
 #pragma pack(pop)
 
 class DataStream {
 public:
-    DataStream(Motor& _motor1, Motor& _motor2, LDM& _ldm);
+    DataStream(FOCController& _focController1, FOCController& _focController2, LDM& _ldm, ScanPath& _scanPath);
     void sendData();
 
-    Motor& motor1;
-    Motor& motor2;
+    FOCController& focController1;
+    FOCController& focController2;
     LDM& ldm;
+    ScanPath& scanPath;
 
-    float calculateAssociatedAngle(Motor& motor);
-    
-    float associated_angle1 = 0.0f;
-    float associated_angle2 = 0.0f;
+private:
+    float calculateAssociatedAngle(FOCController& focController);
 };

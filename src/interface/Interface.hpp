@@ -2,10 +2,13 @@
 
 #include "Arduino.h"
 #include "state_machine/StateMachine.hpp"
+#include "foc_controller/FOCController.hpp"
 #include "motor/Motor.hpp"
 #include "ldm/LDM.hpp"
 #include "sensor/Sensor.hpp"
+#include "scan_path/ScanPath.hpp"
 #include "utils/quick_defs.h"
+#include "utils/tweakable_params.h"
 
 using SerialType = decltype(Serial);
 
@@ -13,7 +16,7 @@ using SerialType = decltype(Serial);
 #define DISABLE_ENABLE_CMD 0b00000001
 #define SCAN_PLAY_PAUSE_CMD 0b00000010
 
-// ajustes
+// FOC Controller ajustes
 #define TOGGLE_CONTROL_MODE_CMD 0b00000011
 #define VELOCITY_P_SET_CMD 0b00001000
 #define VELOCITY_I_SET_CMD 0b00001001
@@ -25,6 +28,16 @@ using SerialType = decltype(Serial);
 #define ANGLE_RAMP_SET_CMD 0b00001111
 #define SENSOR_VELOCITY_LPF_TAU_SET_CMD 0b00010011
 #define FOC_VOLTAGE_LPF_TAU_SET_CMD 0b00010001
+#define VELOCITY_FF_SET_CMD 0b00010010
+#define RECONFIGURE_LDM_CMD 0b00100000
+
+// scan path setters
+#define THETA_PHASE_INC_SET_CMD 0b00100001
+#define PHI_PHASE_INC_SET_CMD 0b00100010
+#define THETA_AMPLITUDE_SET_CMD 0b00100011
+#define PHI_AMPLITUDE_SET_CMD 0b00100100
+#define THETA_CENTRE_SET_CMD 0b00100101
+#define PHI_CENTRE_SET_CMD 0b00100110
 
 // target setters
 #define TARGET_1_SET_CMD 0b00010000
@@ -33,15 +46,16 @@ using SerialType = decltype(Serial);
 
 class Interface {
 public:
-    Interface(SerialType& _serial, StateMachine& _stateMachine, Motor& _motor1, Motor& _motor2, Sensor& _sensor1, Sensor& _sensor2, LDM& _ldm);
+    Interface(SerialType& _serial, StateMachine& _stateMachine, FOCController& _focController1, FOCController& _focController2, Sensor& _sensor1, Sensor& _sensor2, LDM& _ldm, ScanPath& _scanPath);
     void init();
     void processCommand(uint8_t cmd, float data);
     void commandListener();
     void printStatus();
-    void printMotorStatus(Motor& motor);
+    void printFOCStatus(FOCController& focController);
     
 private:
     void handleDisableEnable();
+    void handlePlayPause();
     void handleToggleControlMode();
     void handleTarget1Set(float data);
     void handleTarget2Set(float data);
@@ -55,13 +69,23 @@ private:
     void handleAngleRampSet(float data);
     void handleSensorVelocityLPFSet(float data);
     void handleFOCVoltageLPFSet(float data);
+    void handleVelocityFeedForwardSet(float data);
+    void handleReconfigureLDM(float data);
+    void handleThetaPhaseIncSet(float data);
+    void handlePhiPhaseIncSet(float data);
+    void handleThetaAmplitudeSet(float data);
+    void handlePhiAmplitudeSet(float data);
+    void handleThetaCentreSet(float data);
+    void handlePhiCentreSet(float data);
+   
 
     StateMachine& stateMachine;
-    Motor& motor1;
-    Motor& motor2;
+    FOCController& focController1;
+    FOCController& focController2;
     Sensor& sensor1;
     Sensor& sensor2;
     LDM& ldm;
+    ScanPath& scanPath;
     SerialType& serial;
     uint8_t cmd;
     float data; // temporary storage for command data

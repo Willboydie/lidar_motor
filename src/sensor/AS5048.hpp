@@ -18,6 +18,7 @@
 class AS5048 : public Sensor {
 public:
     AS5048(int cs);
+    ~AS5048() override { deinit(); }
     bool init() override;
     bool init(SPIClass* _spi);
     void deinit() override;

@@ -9,6 +9,8 @@
 #include "interface/Interface.hpp"
 #include "state_machine/StateMachine.hpp"
 #include "motor/Motor.hpp"
+#include "motor/GM2804.hpp"
+#include "foc_controller/FOCController.hpp"
 #include "sensor/AS5048.hpp"
 #include "pwm_driver/PWMDriverTeensy41.hpp"
 #include "utils/tweakable_params.h"
@@ -23,19 +25,20 @@ AS5048 sensor1 = AS5048(SENSOR_SPI_CS_1);
 AS5048 sensor2 = AS5048(SENSOR_SPI_CS_2);
 PWMDriverTeensy41 pwmDriver1 = PWMDriverTeensy41(N1_1, N2_1, N3_1, EN_1);
 PWMDriverTeensy41 pwmDriver2 = PWMDriverTeensy41(N1_2, N2_2, N3_2, EN_2);
-Motor motor1(sensor1, pwmDriver1, 1);
-Motor motor2(sensor2, pwmDriver2, 2);
-Interface interface(Serial, stateMachine, motor1, motor2, sensor1, sensor2, ldm);
-DataStream dataStream(motor1, motor2, ldm);
-SinusoidalScanPath scanPath(100, 10, _PI, _PI);
-SinusoidalScanPath(FOC_loops_per_phi_step, num_vertical_oscillations, horizontal_fov, vertical_fov)
+GM2804 motor1(1, SENSOR_OFFSET_1);
+GM2804 motor2(2, SENSOR_OFFSET_2);
+FOCController focController1(sensor1, pwmDriver1, motor1);
+FOCController focController2(sensor2, pwmDriver2, motor2);
+SinusoidalScanPath scanPath(THETA_INC, PHI_INC, THETA_AMPLITUDE, PHI_AMPLITUDE, THETA_CENTRE, PHI_CENTRE);
+Interface interface(Serial, stateMachine, focController1, focController2, sensor1, sensor2, ldm, scanPath);
+DataStream dataStream(focController1, focController2, ldm, scanPath);
 
 void setup() {
 
   interface.init();
   ldm.init();
-  motor1.init();
-  motor2.init();
+  focController1.init();
+  focController2.init();
   Serial.println("System initialised. Enable to begin.");
 
   // TESTS  (activate only one at a time)
@@ -47,7 +50,6 @@ void setup() {
   // ldm_test();
   // i2c_test();
   // sine_path_test();
-
 }
 
 void loop() {
@@ -55,11 +57,21 @@ void loop() {
   if (millis() - cmdTime > 200) {
     cmdTime = millis();
     interface.commandListener();
+
+    if ( stateMachine.enabled ) {
+      // interface.printMotorStatus(motor1);
+      // interface.printMotorStatus(motor2);
+    }
   }
 
   if ( stateMachine.enabled ) {
-    motor1.loopFOC();
-    motor2.loopFOC();
+    if ( stateMachine.scanning ) {
+      scanPath.update();
+      focController1.setTargetAngle(scanPath.theta);
+      focController2.setTargetAngle(scanPath.phi);
+    }
+    focController1.loop();
+    focController2.loop();
     if ( ldm.isDataReady() ) {
       ldm.triggerMeasurement();
       ldm.readDistance();

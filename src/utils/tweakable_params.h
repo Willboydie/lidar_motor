@@ -22,10 +22,6 @@
 #define GARMIN_MODE_PIN 20  // MODE/STATUS pin for interrupt-driven readings (yellow)
 
 // Motor Parameters
-#define POLE_PAIRS 7
-#define PHASE_RESISTANCE 9.0f
-#define K_V 169.0f
-#define K_E 0.057f
 #define MOTOR_VOLTAGE_LIMIT 12.0f
 #define MOTOR_CURRENT_LIMIT 0.8f
 #define VOLTAGE_POWER_SUPPLY 12.0f
@@ -33,8 +29,8 @@
 
 
 // PID Controllers 
-#define VELOCITY_P 1.0f
-#define VELOCITY_I 1.0f
+#define VELOCITY_P 0.2f
+#define VELOCITY_I 0.2f
 #define VELOCITY_D 0.0f
 #define VELOCITY_RAMP 0.0f   // limit acceleration
 #define CURRENT_UPPER_LIMIT MOTOR_CURRENT_LIMIT
@@ -44,24 +40,29 @@
 #define ANGLE_I 0.0f
 #define ANGLE_D 0.0f
 #define ANGLE_RAMP 0.0f
-#define VELOCITY_UPPER_LIMIT 0.5f   // rad/s
-#define VELOCITY_LOWER_LIMIT -0.5f
+#define VELOCITY_UPPER_LIMIT 1000.0f   // rad/s
+#define VELOCITY_LOWER_LIMIT -1000.0f
+
+
+// FOC Timing Parameters
+#define VELOCITY_LOOP_HZ  1000    // 1 kHz
+#define ANGLE_LOOP_HZ     200     // 200 Hz
 
 
 // Sensor Parameters
 #define SENSOR_OFFSET_1  5.67f // angle units
 #define SENSOR_OFFSET_2 4.02f // angle units
 #define VELOCITY_MIN_TIME_INCREMENT 100 // 100us
-#define ANGULAR_VELOCITY_LPF_TAU 0.33f
-#define FOC_VOLTAGE_LPF_TAU 0.0f
+#define ANGULAR_VELOCITY_LPF_TAU 0.01f
+#define FOC_VOLTAGE_LPF_TAU 0.001f
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 
 
 // Calibration Parameters
 #define ALIGNMENT_VOLTAGE 3.0f // V
-#define WORLD_OFFSET_X 3.00f
-#define WORLD_OFFSET_Y 4.07f
+#define WORLD_OFFSET_X 5.30f
+#define WORLD_OFFSET_Y 0.57f
 
 
 // PWM Driver Parameters
@@ -72,6 +73,17 @@
 #define ANGLE_TRACKING_LIMIT 5000
 #define ANGLE_TRACKING_WINDOW_SIZE 100
 
+// Serial Parameters
+#define BAUD_RATE 460800
+
+// Scan Path Parameters
+#define UPDATE_PERIOD_US 2000 // 2ms / 500Hz
+#define THETA_INC 1500007
+#define PHI_INC 3200003
+#define THETA_AMPLITUDE 0.79
+#define PHI_AMPLITUDE 0.3
+#define THETA_CENTRE 0.0
+#define PHI_CENTRE -0.3
 
 #endif
 

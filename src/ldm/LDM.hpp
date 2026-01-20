@@ -7,9 +7,11 @@ class LDM {
 
 public:
     LDM(int _scl, int _sda, int _mode_pin);
+    virtual ~LDM() { disable(); }
     virtual void init() = 0;
     void enable();
     void disable();
+    virtual void reconfigure(int config_num) = 0;
     
     // Interrupt-driven API
     void triggerMeasurement();                    // Start a new measurement
@@ -31,13 +33,12 @@ protected:
     // unsigned long trigger_timestamp;
 
     int MODE_PIN;
+    bool enabled = false;
 
 private:
     virtual void requestDistance() = 0;
     virtual void readLatestDistance() = 0;
 
     int SCL;
-    int SDA;
-
-    bool enabled = false;
+    int SDA; 
 };

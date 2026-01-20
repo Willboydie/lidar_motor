@@ -13,6 +13,7 @@ public:
     n3 = _n3;
     en = _en;
   }
+  virtual ~PWMDriver() { deinit(); }
     
   bool init();
   void deinit();

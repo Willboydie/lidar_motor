@@ -1,7 +1,8 @@
 #include "PIDControl.hpp"
 
-PIDControl::PIDControl(float p, float i, float d, float _output_ramp, float _lower_limit, float _upper_limit)
-    : P(p)
+PIDControl::PIDControl(float p, float i, float d, float _output_ramp, float _lower_limit, float _upper_limit, float _Ts)
+    : Ts(_Ts)
+    , P(p)
     , I(i)
     , D(d)
     , output_ramp(_output_ramp)    // output derivative limit [volts/second]
@@ -18,7 +19,6 @@ PIDControl::PIDControl(float p, float i, float d, float _output_ramp, float _low
 float PIDControl::operator() (float error){
     // calculate the time from the last call
     unsigned long timestamp_now = micros();
-    float Ts = (timestamp_now - timestamp_prev) * 1e-6f;
 
     // u(s) = (P + I/s + Ds)e(s)
     // Discrete implementations

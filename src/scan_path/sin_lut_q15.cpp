@@ -3,8 +3,38 @@
 // 0 <= phase <= 65535
 int16_t sin_q15_u16(uint16_t phase) {
 
-    uint16_t quadrant = phase / SIN_LUT_SIZE;
-    uint16_t sub_phase = phase % SIN_LUT_SIZE;
+    constexpr uint16_t QUADRANT_BITS = 2;
+    constexpr uint16_t INDEX_BITS = SIN_LUT_BITS;
+
+    constexpr uint16_t INDEX_MASK = (1 << INDEX_BITS) - 1;
+
+    uint16_t quadrant  = phase >> (16 - QUADRANT_BITS);
+    uint16_t sub_phase = (phase >> (16 - QUADRANT_BITS - INDEX_BITS)) & INDEX_MASK;
+
+    switch (quadrant) {
+        case 0:
+            return  sin_lut_q15[sub_phase];
+        case 1:
+            return  sin_lut_q15[SIN_LUT_SIZE - sub_phase];
+        case 2:
+            return -sin_lut_q15[sub_phase];
+        default:
+            return -sin_lut_q15[SIN_LUT_SIZE - sub_phase];
+    }
+}
+
+int16_t sin_q15_u32(uint32_t phase) {
+
+    constexpr uint32_t QUADRANT_BITS = 2;
+    constexpr uint32_t INDEX_BITS = SIN_LUT_BITS;
+
+    constexpr uint32_t INDEX_MASK = (1U << INDEX_BITS) - 1;
+
+    uint32_t quadrant =
+        phase >> (32 - QUADRANT_BITS);
+
+    uint32_t sub_phase =
+        (phase >> (32 - QUADRANT_BITS - INDEX_BITS)) & INDEX_MASK;
 
     switch (quadrant) {
         case 0:

@@ -1,26 +1,19 @@
-ANGLULAR SCAN PATH
-    1. Fix: 
-        - Wrapping of theta_period / phi_period to fit the LUT.
-    2. Plot actual vs expected paths for different PID values.
 
-WORLD PLANE ANGLE MAPPING
-    1. Bring them to rest onto known physical extrema.
-    2. Set the offset such that after finding the edges (0, 0) is the true origin.
-    3. Constrain the target angle in the move() function
-
-UI
-    1. Create a config page and an output dashboard page.
-    2. Plotting expected vs actual path (must wait for world mapping) -- DOES IT, THOUGH?
+VELOCITY RIPPLE
+    1. Command a constant velocity and sample from the encoder at 20KHz+. Fit a straight line to the data and find the RMS error.
 
 LiDAR CONFIG TESTING
     1. Take identical scans in the car park using each of the GARMIN's preset configs.
 
+TEST SCAN
+    2. Take a long, irrational lissajous scan of the office.
+
+
 I M P R O V E M E N T S
-- Add proper destructors to each class.
 - Implement the entire "backend" with integer arithmetic.
-- Create a FOC controller class to take those responsabilities from Motor
 - Ship program to STM32 G4
 - Add current sensing
+- LUT interpolation
 
 G O A L S
 - Self optimising PID?
@@ -30,3 +23,4 @@ G O A L S
 
 ISSUES
 electrical offset test rig
+correct the sensor direction and find true elec offsets
