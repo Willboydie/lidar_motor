@@ -1,5 +1,6 @@
 BEFORE READING ANY OF THIS, A PLEDGE. I, WILLIAM BOYD, WILL ALWAYS WORK IN SECONDARY GIT BRANCHES -- NEVER ON MAIN !!!!!
-Download Jenkins and use that! Great for your CV!
+
+Download Jenkins ! ! ! !
 
 
 IMPROVING FOC PERFORMANCE -- TO TRY
@@ -20,6 +21,56 @@ IMPROVING FOC PERFORMANCE -- TO TRY
 
 LiDAR CONFIG TESTING
     1. Take identical scans in the car park using each of the GARMIN's preset configs.
+
+
+STM32G4 SHIP (USE A GIT BRANCH !!)
+
+1. Mechanical / physical
+    Ask Fraser to solder the horizontal headers.
+    Stack boards and verify physical pin alignment.
+
+2. Power & ground (add this)
+    Map motor ground vs MCU ground.
+    Decide shunt reference strategy.
+    Ensure ADC inputs never exceed 3.3V.
+
+3. Pin mapping
+    Identify PWM pins Shield 3.2 uses.
+    Cross-reference with STM32G4 timer channels.
+    Lock in:
+        TIM1 → Motor A
+        TIM8 → Motor B
+
+4. SPI buses
+    Identify both SPI busses.
+    Decide which peripherals go where.
+    Make sure they don’t collide with PWM/ADC pins.
+
+5. Current sensing hardware
+    Identify ADC pins for inline sensing.
+    Decide:
+        Which 2 phases per motor.
+        Which OPAMPs (internal or external).
+
+6. Software base
+    Add STM32G4 driver class (cleaned).
+    Get voltage mode spinning first.
+    This is critical:
+    Do NOT touch current sensing until both motors spin open-loop.
+
+7. Current sensing theory
+    Understand inline sensing routine.
+    Validate sampling timing.
+    Decide offset calibration method.
+
+8. Software sensing
+    Add inline sensing STM32G4 subclass.
+    Log raw ADC first (no FOC yet).
+
+9. Integration
+    Add inline sensing to main script.
+    Enable current limits.
+    Only then close Id/Iq loops.
 
 
 I M P R O V E M E N T S
