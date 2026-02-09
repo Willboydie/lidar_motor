@@ -47,7 +47,7 @@ private:
     float angular_velocity = 0.0f;
     uint32_t t0 = 0;
 
-    bool first_measurement = true;
+    bool not_first_measurement = false;
 
     _LowPassFilter velocityLPF{VELOCITY_LOW_PASS_FILTER_TAU};
     _LowPassFilter angleLPF{ANGLE_LOW_PASS_FILTER_TAU};

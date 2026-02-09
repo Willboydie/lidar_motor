@@ -27,7 +27,7 @@ bool Sensor::update() {
     uint32_t t1 = micros();
 
     // --- unwrap angle ---
-    if (first_measurement) {
+    if (not_first_measurement) {
         float angle_change = raw_sensor_angle - previous_sensor_angle;
         bool positive_change = angle_change > 0.0f;
         float abs_angle_change = !positive_change ? -angle_change : angle_change;
@@ -35,7 +35,7 @@ bool Sensor::update() {
         previous_sensor_angle = raw_sensor_angle;
         
         rotor_angle = raw_sensor_angle + cumulated_rotations * _2pi;
-        rotor_angle = angleLPF(rotor_angle, dt);
+        rotor_angle = angleLPF(rotor_angle);
 
         // velocity estimation
         if (t0 > t1) {
@@ -47,17 +47,16 @@ bool Sensor::update() {
             float dt = static_cast<float>(dt_us) * 1e-6f;
             angular_velocity = (rotor_angle - prev_angle) / dt;
             prev_angle = rotor_angle;
-            angular_velocity = velocityLPF(angular_velocity, dt);
+            angular_velocity = velocityLPF(angular_velocity);
             t0 = t1;
         }
 
     } else {
         previous_sensor_angle = raw_sensor_angle;
         prev_angle = rotor_angle;
-        first_measurement = false; 
+        not_first_measurement = true; 
     }
-    
-    
+
     return true;
 }
 
@@ -65,7 +64,7 @@ bool Sensor::update() {
 void Sensor::enable() {
     if (enabled) return;
     enabled = true;
-    first_measurement = true;
+    not_first_measurement = false;
     cumulated_rotations = 0;  // Reset rotation counter
     previous_sensor_angle = 0.0f;  // Reset previous angle
     t0 = micros();

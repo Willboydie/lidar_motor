@@ -67,15 +67,15 @@ void sensor_test() {
                 Serial.print(" |  Angular Velocity: " + String(velocity, 3) + " rad/s");
             }
 
-            // Serial.print(" |  Cumulated Rotations: " + String(sensor2.getCumulatedRotations()));
+            Serial.print(" |  Cumulated Rotations: " + String(sensor1.getCumulatedRotations()));
             // Serial.print(" |  Angle Change: " + String(sensor2.getAngleChange()));
             // Serial.print(" |  Acceleration: " + String(sensor2.getAcceleration(), 4) + " rad/s^2");
-            Serial.print(" |  Sensor Magnitude: " + String(sensor1.getSensorMagnitude()));
-            Serial.print(" |  AGC Value: " + String(sensor1.getAGCValue()));
-            Serial.print(" |  OCF Value: " + String(sensor1.getOCFValue()));
-            Serial.print(" |  COF Value: " + String(sensor1.getCOFValue()));
-            Serial.print(" |  Comp Low Value: " + String(sensor1.getCompLowValue()));
-            Serial.print(" |  Comp High Value: " + String(sensor1.getCompHighValue()));
+            // Serial.print(" |  Sensor Magnitude: " + String(sensor1.getSensorMagnitude()));
+            // Serial.print(" |  AGC Value: " + String(sensor1.getAGCValue()));
+            // Serial.print(" |  OCF Value: " + String(sensor1.getOCFValue()));
+            // Serial.print(" |  COF Value: " + String(sensor1.getCOFValue()));
+            // Serial.print(" |  Comp Low Value: " + String(sensor1.getCompLowValue()));
+            // Serial.print(" |  Comp High Value: " + String(sensor1.getCompHighValue()));
             Serial.println();
         }
     }

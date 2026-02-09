@@ -7,7 +7,7 @@
 
 class PIDControl {
 public:
-    PIDControl(float p, float i, float d, float _output_ramp, float _lower_limit, float _upper_limit, float _Ts);
+    PIDControl(float p, float i, float d, float _output_ramp, float _lower_limit, float _upper_limit);
     ~PIDControl() = default;
     float operator() (float error);
     int32_t operator() (int32_t error);  // Integer overload - uses float internally for precision
@@ -17,9 +17,7 @@ public:
     void setI(float _i) { I = _i; }
     void setD(float _d) { D = _d; }
     void setRamp(float _ramp) { output_ramp = _ramp; }
-    void setTs(float _Ts) { Ts = _Ts; }
 
-    float Ts;
     float P;
     float I;
     float D;

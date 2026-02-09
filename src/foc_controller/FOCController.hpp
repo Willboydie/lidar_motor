@@ -12,9 +12,9 @@
 #include "../utils/tweakable_params.h"
 #include "../state_machine/StateMachine.hpp"
 
-constexpr unsigned long VELOCITY_DT_US  = (1000000UL / VELOCITY_LOOP_HZ);
-constexpr unsigned long ANGLE_DT_US     = (1000000UL / ANGLE_LOOP_HZ);
-constexpr unsigned long CURRENT_DT_US   = (1000000UL / CURRENT_LOOP_HZ);
+// constexpr unsigned long VELOCITY_DT_US  = (1000000UL / VELOCITY_LOOP_HZ);
+// constexpr unsigned long ANGLE_DT_US     = (1000000UL / ANGLE_LOOP_HZ);
+// constexpr unsigned long CURRENT_DT_US   = (1000000UL / CURRENT_LOOP_HZ);
 
 class FOCController {
 public:
@@ -88,11 +88,10 @@ private:
     float target_q_current;
     float target_d_current = 0.0f;  // set to zero while not current sensing
 
-    uint32_t last_current_us  = 0;
-    uint32_t last_velocity_us = 0;
-    uint32_t last_angle_us    = 0;
-    uint32_t last_sensor_update_us = 0;
-
+    // uint32_t last_current_us  = 0;
+    // uint32_t last_velocity_us = 0;
+    // uint32_t last_angle_us    = 0;
+    // uint32_t last_sensor_update_us = 0;
 
     // FOC Key Values
     float Iq = 0.0f;
@@ -112,8 +111,8 @@ private:
 
 
     // PID controllers
-    PIDControl PID_angle_controller{ANGLE_P, ANGLE_I, ANGLE_D, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT, ANGLE_DT_US*1e-6f}; // angular error -> target velocity
-    PIDControl PID_velocity_controller{VELOCITY_P, VELOCITY_I, VELOCITY_D, VELOCITY_RAMP, CURRENT_LOWER_LIMIT, CURRENT_UPPER_LIMIT, VELOCITY_DT_US*1e-6f};  // velocity error -> target q current
+    PIDControl PID_angle_controller{ANGLE_P, ANGLE_I, ANGLE_D, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT}; // angular error -> target velocity
+    PIDControl PID_velocity_controller{VELOCITY_P, VELOCITY_I, VELOCITY_D, VELOCITY_RAMP, CURRENT_LOWER_LIMIT, CURRENT_UPPER_LIMIT};  // velocity error -> target q current
 
     _LowPassFilter LPF_voltage{FOC_VOLTAGE_LPF_TAU};
 

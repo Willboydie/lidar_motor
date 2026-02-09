@@ -24,7 +24,6 @@ bool FOCController::init() {
         return false;
     }
 
-
     if (!sensor.update()) {
         Serial.println("Failed to update sensor");
         return false;
@@ -55,18 +54,15 @@ bool FOCController::loop() {
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
     angular_velocity = sensor.getAngularVelocity();
-    
 
     if (angle_tracking_count < ANGLE_TRACKING_LIMIT) {
         angle_tracking[angle_tracking_count++] = mechanical_angle;
     }
 
-
     if (controlMode == ANGLE) {
         angular_error = target_angle - mechanical_angle;
         target_velocity = PID_angle_controller(angular_error);
     }
-
 
     velocity_error = target_velocity - angular_velocity;
 
@@ -82,7 +78,7 @@ bool FOCController::loop() {
 
     
     Vq = estimate_Vq(target_q_current);
-    // Vq = LPF_voltage(Vq, );
+    Vq = LPF_voltage(Vq);
     Vq = _constrain(Vq, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT);
     setPhaseVoltage(); // Vd = 0.0f
     return true;

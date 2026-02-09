@@ -5,6 +5,7 @@ FILTERING
     "Maximise the noise frequency then brutally cut it out!"
     Maintain an estimate of the distribution of the sensor bins (independent of position)
         -- use this estimate to predict the true sensor reading, tracking the distribution.
+    Check error flags when COF==1, etc...
 
 
 LiDAR CONFIG TESTING

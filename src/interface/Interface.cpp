@@ -31,14 +31,14 @@ void Interface::printFOCStatus(FOCController& focController) {
         display_angle += WORLD_OFFSET_Y; 
         target_angle += WORLD_OFFSET_Y;
     }
-    // serial.print("Mech angle: " + String(display_angle, 3));
-    // serial.print("  |  E angle: " + String(motor.getElectricalAngle(), 3));
-    // serial.print("  |  Target A: " + String(target_angle, 3));
-    serial.print("Vel: " + String(-focController.getAngularVelocity(), 3));
+    serial.print("Mech angle: " + String(display_angle, 3));
+    serial.print("  |  E angle: " + String(focController.getElectricalAngle(), 3));
+    serial.print("  |  Target A: " + String(target_angle, 3));
+    serial.print("  |  Vel: " + String(-focController.getAngularVelocity(), 3));
     // serial.print("  |  A error: " + String(focController.getAngularError(), 3));
-    serial.print("  |  Target: " + String(-focController.getTargetVelocity(), 3));
-    serial.print("  |  Err: " + String(focController.getVelocityError(), 3));
-    serial.print("  |  Target Iq: " + String(focController.getTargetQCurrent(), 3));
+    // serial.print("  |  Target: " + String(-focController.getTargetVelocity(), 3));
+    // serial.print("  |  Err: " + String(focController.getVelocityError(), 3));
+    // serial.print("  |  Target Iq: " + String(focController.getTargetQCurrent(), 3));
     // serial.print("  |  Vq: " + String(focController.getVq(), 3));
     // serial.print("  |  LDM distance: " + String(ldm.getLatestDistance()));
     serial.println();

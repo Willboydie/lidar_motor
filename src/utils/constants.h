@@ -37,8 +37,8 @@
 
 // Calibration
 #define ALIGNMENT_VOLTAGE 3.0f // V
-#define WORLD_OFFSET_X 5.30f
-#define WORLD_OFFSET_Y 0.57f
+#define WORLD_OFFSET_X 5.28f
+#define WORLD_OFFSET_Y 2.11f
 
 
 // PWM Driver
