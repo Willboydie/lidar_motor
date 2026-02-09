@@ -1,4 +1,6 @@
 BEFORE READING ANY OF THIS, A PLEDGE. I, WILLIAM BOYD, WILL ALWAYS WORK IN SECONDARY GIT BRANCHES -- NEVER ON MAIN !!!!!
+Download Jenkins and use that! Great for your CV!
+
 
 IMPROVING FOC PERFORMANCE -- TO TRY
     -Try different velocity estimation rates.
@@ -29,6 +31,7 @@ I M P R O V E M E N T S
 - Find the true world angles
 - Make startup smoother - remove jerk and glitch.
 - Reduce lag improve reactance (reduce noise) (see above)
+
 
 G O A L S
 - Self optimising PID?
