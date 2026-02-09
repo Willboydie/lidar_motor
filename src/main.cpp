@@ -63,10 +63,9 @@ void loop() {
   if (millis() - cmdTime > 200) {
     cmdTime = millis();
     interface.commandListener();
-
-    if ( stateMachine.enabled ) {
-      interface.printFOCStatus(focController2);
-    }
+    // if ( stateMachine.enabled ) {
+    //   interface.printFOCStatus(focController2);
+    // }
   }
 
   if ( stateMachine.enabled ) {

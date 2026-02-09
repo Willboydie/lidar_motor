@@ -81,7 +81,7 @@ def spherical_to_cartesian(distance, theta, phi, distance_unit='cm'):
         r = distance
     
     # Convert spherical to Cartesian
-    x = r * np.cos(phi) * np.cos(theta)
+    x = -r * np.cos(phi) * np.cos(theta)
     y = r * np.cos(phi) * np.sin(theta)
     z = r * np.sin(phi)
     
