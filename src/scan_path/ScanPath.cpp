@@ -14,7 +14,7 @@ void ScanPath::update() {
         phi_phase = (phi_phase + phi_phase_inc);
 
         // Schedule next tick
-        next_tick_us += UPDATE_PERIOD_US;
+        next_tick_us += SCAN_PATH_UPDATE_PERIOD_US;
     }
 
     // Compute targets
@@ -22,9 +22,9 @@ void ScanPath::update() {
     phi   = calcTargetPhi();
 }
 
-
-float ScanPath::calcTargetTheta() { return static_cast<float>(lookUpTheta()) * theta_amplitude / 32767.0f + theta_centre; }
-float ScanPath::calcTargetPhi() { return static_cast<float>(lookUpPhi()) * phi_amplitude / 32767.0f + phi_centre; }
+                                                                                // 0.000030518509476f = 1 / 32767
+float ScanPath::calcTargetTheta() { return static_cast<float>(lookUpTheta()) * theta_amplitude * 0.000030518509476f + theta_centre; }
+float ScanPath::calcTargetPhi() { return static_cast<float>(lookUpPhi()) * phi_amplitude * 0.000030518509476f + phi_centre; }
 
 int16_t SinusoidalScanPath::lookUpTheta() { return sin_q15_u32(theta_phase); }
 int16_t SinusoidalScanPath::lookUpPhi() { return sin_q15_u32(phi_phase); }

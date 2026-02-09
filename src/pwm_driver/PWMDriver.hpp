@@ -41,6 +41,7 @@ private:
   virtual void* configureCenterAligned3PWM(long pwm_frequency, const int pinA, const int pinB, const int pinC) = 0;
   virtual void writeCenterAligned3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params) = 0;
   virtual void stopPwmHardware(void* params) = 0;
+  virtual void cleanupParams(void* params) = 0;
 
   bool enabled = false;
 };

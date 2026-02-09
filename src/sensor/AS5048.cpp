@@ -1,7 +1,9 @@
 #include "AS5048.hpp"
 
+constexpr float _2pi_over_cpr = _2PI / CPR;
 
-AS5048::AS5048(int cs) {
+
+AS5048::AS5048(int cs) : Sensor() {
     cs_pin = cs;
 }
 
@@ -19,47 +21,62 @@ bool AS5048::init(SPIClass* _spi) {
     return true;
 }
 
+float AS5048::getSensorAngle() {
+    return static_cast<float>(getRawAngleCount()) * _2pi_over_cpr;
+}
+
+void AS5048::updateDiagnostics() {
+    AS5048Diagnostics diagnostics = readDiagnostics();
+    this->agc = diagnostics.agc;
+    this->ocf = diagnostics.ocf;
+    this->cof = diagnostics.cof;
+    this->compLow = diagnostics.compLow;
+    this->compHigh = diagnostics.compHigh;
+    this->magnitude = getMagnitudeCount();
+}
+
+AS5048Diagnostics AS5048::readDiagnostics() {
+	uint16_t command = AS5048A_DIAGNOSTICS_REG | AS5048A_RW; // set r=1, result ix 0x7FFD
+	spi_write(command);
+	AS5048Diagnostics result = {
+			.reg = (nop()& AS5048A_RESULT_MASK)
+	};
+	return result;
+}
  
-uint16_t AS5048::getRawCount() {
-    
-    word command = ANGLE_REGISTER;
+uint16_t AS5048::getRawAngleCount() {
+    uint16_t command = AS5048A_ANGLE_REG | AS5048A_PARITY | AS5048A_RW; // set r=1 and parity=1, result ix 0xFFFF
+    spi_write(command);
+    uint16_t angle = nop();
+    return angle & AS5048A_RESULT_MASK;
+}
 
-    if (COMMAND_RW_BIT > 0) {
-        command = ANGLE_REGISTER | (1 << COMMAND_RW_BIT);
-    }
+uint16_t AS5048::getMagnitudeCount() {
+    uint16_t command = AS5048A_MAGNITUDE_REG | AS5048A_RW; // set r=1, result ix 0x7FFE
+    spi_write(command);
+    uint16_t magnitude = nop();
+    return magnitude & AS5048A_RESULT_MASK;
+}
 
-    if (COMMAND_PARITY_BIT > 0) {
-            //Add a parity bit on the the MSB
-        command |= ((word)spiCalcEvenParity(command) << COMMAND_PARITY_BIT);
-    }
+uint16_t AS5048::nop() {
+    return spi_write(0xFFFF);
+}
 
-    //SPI - begin transaction
-    spi->beginTransaction(spi_settings);
-
+uint16_t AS5048::spi_write(uint16_t command) {
     //Send the command
+    spi->beginTransaction(spi_settings);
     digitalWriteFast(cs_pin, LOW);
-    spi->transfer16(command);
+    uint16_t data = spi->transfer16(command);
     digitalWriteFast(cs_pin,HIGH);
-
-    delayMicroseconds(1); // delay 1us, the minimum time possible in plain arduino. 350ns is the required time for AMS sensors, 80ns for MA730, MA702
-
-    //Now read the response
-    digitalWriteFast(cs_pin, LOW);
-    word register_value = spi->transfer16(0x00);
-    digitalWriteFast(cs_pin, HIGH);
-
-    //SPI - end transaction
     spi->endTransaction();
-
-    register_value = register_value >> (1 + DATA_START_BIT - BIT_RESOLUTION);  //this should shift data to the rightmost bits of the word
-
-    const static word data_mask = 0xFFFF >> (16 - BIT_RESOLUTION);
-
-    return (uint16_t)(register_value & data_mask);  // Return the data, stripping the non data (e.g parity) bits
+    // error_flag = data & AS5048A_ERRFLG;
+    return data;
 }
 
 
-byte AS5048::spiCalcEvenParity(word v) {
+//---------------------------------------------------------------
+
+byte AS5048::spiCalcEvenParity(word v) {  // unused in this implementation
     v ^= v >> 8;
     v ^= v >> 4;
     v ^= v >> 2;

@@ -1,9 +1,9 @@
 #include "FOCController.hpp"
 
 FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor) 
-: sensor(_sensor)
+: motor_number(_motor.motor_number)
+, sensor(_sensor)
 , pwm_driver(_pwm_driver)
-, motor_number(_motor.motor_number)
 , motor_phase_resistance(_motor.phase_resistance)
 , motor_K_v(_motor.K_v)
 , motor_K_e(_motor.K_e)
@@ -37,61 +37,57 @@ bool FOCController::init() {
     target_q_current = 0.0f;
     target_d_current = 0.0f;
     Serial.println("FOC controller for motor " + String(motor_number) + " initialised. Starting mechanical angle: " + String(mechanical_angle, 3) + " rad");
+    initialised = true;
     return true;
 }
 
 bool FOCController::loop() {
     if (!enabled) return false;
-
-    uint32_t now = micros();
-
-    if (!sensor.update()) {
-        Serial.println("Failed to update sensor");
+    if (!initialised) {
+        Serial.println("Can't loop FOC controller - not initialised");
         return false;
     }
 
+    if (!sensor.update()) {
+    Serial.println("Failed to update sensor");
+    return false;
+    }
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
     angular_velocity = sensor.getAngularVelocity();
+    
 
     if (angle_tracking_count < ANGLE_TRACKING_LIMIT) {
         angle_tracking[angle_tracking_count++] = mechanical_angle;
     }
 
-    /* -------- Angle loop (slow) -------- */
-    if (now - last_angle_us >= ANGLE_DT_US) {
-        last_angle_us = now;
 
-        if (controlMode == ANGLE) {
-            angular_error = target_angle - mechanical_angle;
-            target_velocity = PID_angle_controller(angular_error);
-        }
+    if (controlMode == ANGLE) {
+        angular_error = target_angle - mechanical_angle;
+        target_velocity = PID_angle_controller(angular_error);
     }
 
-    /* -------- Velocity loop (medium) -------- */
-    if (now - last_velocity_us >= VELOCITY_DT_US) {
-        last_velocity_us = now;
 
-        velocity_error = target_velocity - angular_velocity;
+    velocity_error = target_velocity - angular_velocity;
 
-        float Iq_pid = PID_velocity_controller(velocity_error);
-        float Iq_ff  = K_vff * target_velocity;
+    float Iq_pid = PID_velocity_controller(velocity_error);
+    float Iq_ff  = K_vff * target_velocity;
 
-        target_q_current = Iq_pid + Iq_ff;
-        target_q_current = _constrain(
-            target_q_current,
-            -MOTOR_CURRENT_LIMIT,
-            MOTOR_CURRENT_LIMIT
-        );
-    }
+    target_q_current = Iq_pid + Iq_ff;
+    target_q_current = _constrain(
+        target_q_current,
+        -MOTOR_CURRENT_LIMIT,
+        MOTOR_CURRENT_LIMIT
+    );
 
+    
     Vq = estimate_Vq(target_q_current);
-    Vq = LPF_voltage(Vq);
+    // Vq = LPF_voltage(Vq, );
     Vq = _constrain(Vq, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT);
     setPhaseVoltage(); // Vd = 0.0f
-
     return true;
 }
+
 
 
 void FOCController::setPhaseVoltage() {
@@ -153,6 +149,20 @@ void FOCController::disable() {
 }
 
 
+void FOCController::setControlMode(ControlMode _controlMode) {
+    // Reset PID controllers when switching modes to prevent stale state
+    if (controlMode != _controlMode) {
+        if (_controlMode == VELOCITY) {
+            // Switching to velocity mode: reset angle PID since it won't be used
+            PID_angle_controller.reset();
+        } else if (_controlMode == ANGLE) {
+            // Switching to angle mode: reset velocity PID since it will get new values from angle PID
+            PID_velocity_controller.reset();
+        }
+    }
+    controlMode = _controlMode;
+}
+
 void FOCController::setTargetAngle(float _target_world_angle) { 
     float target_local_angle = worldToLocal(motor_number, _target_world_angle); 
     target_angle = target_local_angle; 
@@ -163,4 +173,15 @@ void FOCController::deinit() {
     disable();
     sensor.deinit();
     pwm_driver.deinit();
+}
+
+
+// ---------- Calibration ----------
+void FOCController::calibrate() {
+    if (!initialised) {
+        Serial.println("Can't calibrate FOC controller - not initialised");
+        return;
+    }
+
+    // waiting for something to calibrate...
 }

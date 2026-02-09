@@ -36,9 +36,10 @@ ANGLE_P_SET_CMD = 0b00001100
 ANGLE_I_SET_CMD = 0b00001101
 ANGLE_D_SET_CMD = 0b00001110
 ANGLE_RAMP_SET_CMD = 0b00001111
-SENSOR_VELOCITY_LPF_TAU_SET_CMD = 0b00010011
+VELOCITY_LPF_TAU_SET_CMD = 0b00010010
+ANGLE_LPF_TAU_SET_CMD = 0b00010011
 FOC_VOLTAGE_LPF_TAU_SET_CMD = 0b00010001
-VELOCITY_FF_SET_CMD = 0b00010010
+VELOCITY_FF_SET_CMD = 0b10010010
 RECONFIGURE_LDM_CMD = 0b00100000
 THETA_PHASE_INC_SET_CMD = 0b00100001
 PHI_PHASE_INC_SET_CMD = 0b00100010
@@ -51,17 +52,21 @@ TARGET_2_SET_CMD = 0b00010100
 
 # Default values mirrored from `src/utils/tweakable_params.h` and scan path defaults
 DEFAULTS = {
-    "velocity_p": 0.2,
-    "velocity_i": 0.2,
+    "velocity_p": 0.0,
+    "velocity_i": 0.0,
     "velocity_d": 0.0,
     "velocity_ramp": 0.0,
-    "angle_p": 10.0,
+    "angle_p": 0.0,
     "angle_i": 0.0,
     "angle_d": 0.0,
     "angle_ramp": 0.0,
-    "sensor_velocity_lpf_tau": 0.01,
     "foc_voltage_lpf_tau": 0.001,
+    "kalman_qa": 1e-9,
+    "lpf_velocity_tau": 0.001,
     "velocity_ff": 0.0,
+    "notch_filter_freq": 50.0,
+    "notch_filter_q": 1.0,
+    "notch_filter_sample_rate": 10000.0,
     "target_1": 0.0,
     "target_2": 0.0,
     "theta_phase_inc": 1500007,
@@ -158,8 +163,8 @@ class MotorControlUI:
         main_frame.grid_rowconfigure(1, weight=1)
 
         # Top section: State Controls (full width)
-        state_section = ttk.LabelFrame(main_frame, text="System State", padding=15)
-        state_section.grid(row=0, column=0, sticky="w", pady=(10, 10))
+        state_section = ttk.LabelFrame(main_frame, text="System State", padding=5)
+        state_section.grid(row=0, column=0, sticky="ew", pady=(10, 10), columnspan=2)
         state_section.grid_columnconfigure(0, weight=1)
         
         state_buttons_frame = ttk.Frame(state_section)
@@ -214,16 +219,31 @@ class MotorControlUI:
         # Filters & Feed-Forward
         lpf_frame = ttk.LabelFrame(left_column, text="Filters & Feed-Forward", padding=12)
         lpf_frame.grid(row=2, column=0, sticky="ew")
-        self.sensor_vel_lpf_entry = self._add_pid_row(
-            lpf_frame, "Sensor Velocity τ", 0, SENSOR_VELOCITY_LPF_TAU_SET_CMD, "sensor_velocity_lpf_tau"
+        self.lpf_velocity_tau_entry = self._add_pid_row(
+            lpf_frame, "Sensor Velocity τ", 0, VELOCITY_LPF_TAU_SET_CMD, "lpf_velocity_tau"
+        )
+        self.angle_lpf_tau_entry = self._add_pid_row(
+            lpf_frame, "Angle τ", 1, ANGLE_LPF_TAU_SET_CMD, "angle_lpf_tau"
         )
         self.foc_voltage_lpf_entry = self._add_pid_row(
-            lpf_frame, "FOC Voltage τ", 1, FOC_VOLTAGE_LPF_TAU_SET_CMD, "foc_voltage_lpf_tau"
-        )
-        self.velocity_ff_entry = self._add_pid_row(
-            lpf_frame, "Velocity FF", 2, VELOCITY_FF_SET_CMD, "velocity_ff"
+            lpf_frame, "FOC Voltage τ", 2, FOC_VOLTAGE_LPF_TAU_SET_CMD, "foc_voltage_lpf_tau"
         )
 
+        # self.kalman_qa_entry = self._add_pid_row(
+        #     lpf_frame, "Kalman Qa", 1, KALMAN_QA_SET_CMD, "kalman_qa"
+        # )
+        self.velocity_ff_entry = self._add_pid_row(
+            lpf_frame, "Velocity FF", 3, VELOCITY_FF_SET_CMD, "velocity_ff"
+        )
+        # self.notch_filter_freq_entry = self._add_pid_row(
+        #     lpf_frame, "Notch Frequency", 3, NOTCH_FILTER_FREQ_SET_CMD, "notch_filter_freq"
+        # )
+        # self.notch_filter_q_entry = self._add_pid_row(
+        #     lpf_frame, "Notch Q", 4, NOTCH_FILTER_Q_SET_CMD, "notch_filter_q"
+        # )
+        # self.notch_filter_sample_rate_entry = self._add_pid_row(
+        #     lpf_frame, "Notch Sample Rate", 5, NOTCH_FILTER_SAMPLE_RATE_SET_CMD, "notch_filter_sample_rate"
+        # )
         # Right column: Scan Path & System Config
         right_column = ttk.Frame(controls_container)
         right_column.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
@@ -304,24 +324,20 @@ class MotorControlUI:
             foreground="orange"
         ).grid(row=1, column=0, columnspan=3, pady=(5, 0))
 
-        # Serial Monitor for Settings tab
-        monitor_frame = ttk.LabelFrame(main_frame, text="Serial Monitor", padding=5)
-        monitor_frame.grid(row=0, column=3, rowspan=2, sticky="nsew", pady=(0, 0))
-        monitor_frame.grid_rowconfigure(1, weight=1)
-        monitor_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_rowconfigure(2, weight=1)
+        settings_monitor_frame = ttk.LabelFrame(main_frame, text="Settings Monitor", padding=5)
+        settings_monitor_frame.grid(row=0, column=2, pady=10, sticky="nsew", rowspan=3, columnspan=3)
+        settings_monitor_frame.grid_rowconfigure(1, weight=1)
+        settings_monitor_frame.grid_columnconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(1, weight=1)
 
-        monitor_header = ttk.Frame(monitor_frame)
-        monitor_header.grid(row=0, column=0, sticky="ew", pady=2)
-        monitor_header.grid_columnconfigure(0, weight=1)
-        ttk.Button(monitor_header, text="Clear Monitor", command=self.clear_monitor).grid(
-            row=0, column=1, sticky="e"
+        ttk.Button(settings_monitor_frame, text="Clear Monitor", command=self.clear_monitor).grid(
+            row=0, column=0, sticky="e", pady=2
         )
-        
-        self.serial_text_settings = scrolledtext.ScrolledText(
-            monitor_frame, height=10, width=80, bg="black", fg="lime", font=("Courier", 9)
+        self.settings_serial_text_data = scrolledtext.ScrolledText(
+            settings_monitor_frame, height=15, width=80, bg="black", fg="lime", font=("Courier", 9)
         )
-        self.serial_text_settings.grid(row=1, column=0, sticky="nsew")
+        self.settings_serial_text_data.grid(row=1, column=0, sticky="nsew")
+
 
     def setup_data_tab(self):
         """Setup the Incoming Data Dashboard tab."""
@@ -665,12 +681,12 @@ class MotorControlUI:
             if self.message_queue.empty():
                 break
             message = self.message_queue.get_nowait()
-            # Update both serial monitors
-            self.serial_text_settings.insert(tk.END, message)
+            # Update serial monitor in both tabs
             self.serial_text_data.insert(tk.END, message)
+            self.settings_serial_text_data.insert(tk.END, message)
         
-        self.serial_text_settings.see(tk.END)
         self.serial_text_data.see(tk.END)
+        self.settings_serial_text_data.see(tk.END)
         self.root.after(50, self.update_serial_monitor)
     
     def update_sensor_display(self):
@@ -715,16 +731,16 @@ class MotorControlUI:
         self.root.after(16, self.update_sensor_display)  # ~60 Hz UI update
 
     def log_message(self, message):
-        # Log to both serial monitors
-        self.serial_text_settings.insert(tk.END, message)
+        # Log to serial monitor in both tabs
         self.serial_text_data.insert(tk.END, message)
-        self.serial_text_settings.see(tk.END)
+        self.settings_serial_text_data.insert(tk.END, message)
         self.serial_text_data.see(tk.END)
+        self.settings_serial_text_data.see(tk.END)
 
     def clear_monitor(self):
-        # Clear both serial monitors
-        self.serial_text_settings.delete(1.0, tk.END)
+        # Clear serial monitor in both tabs
         self.serial_text_data.delete(1.0, tk.END)
+        self.settings_serial_text_data.delete(1.0, tk.END)
 
     def toggle_recording(self):
         """Start or stop recording data packets."""

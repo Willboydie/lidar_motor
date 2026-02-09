@@ -362,4 +362,8 @@ void PWMDriverTeensy41::stopPwmHardware(void* params) {
   }
 }
 
+void PWMDriverTeensy41::cleanupParams(void* params) {
+  delete static_cast<Teensy41DriverParams*>(params);
+}
+
 #endif

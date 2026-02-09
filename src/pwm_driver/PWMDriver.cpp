@@ -64,6 +64,6 @@ void PWMDriver::deinit() {
   pinMode(en, INPUT);
 
   // Free heap memory
-  delete params;
+  cleanupParams(params);
   params = nullptr;
 }

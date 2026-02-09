@@ -15,9 +15,8 @@ using SerialType = decltype(Serial);
 // state machine
 #define DISABLE_ENABLE_CMD 0b00000001
 #define SCAN_PLAY_PAUSE_CMD 0b00000010
-
-// FOC Controller ajustes
 #define TOGGLE_CONTROL_MODE_CMD 0b00000011
+
 #define VELOCITY_P_SET_CMD 0b00001000
 #define VELOCITY_I_SET_CMD 0b00001001
 #define VELOCITY_D_SET_CMD 0b00001010
@@ -26,12 +25,15 @@ using SerialType = decltype(Serial);
 #define ANGLE_I_SET_CMD 0b00001101
 #define ANGLE_D_SET_CMD 0b00001110
 #define ANGLE_RAMP_SET_CMD 0b00001111
-#define SENSOR_VELOCITY_LPF_TAU_SET_CMD 0b00010011
+
+#define VELOCITY_LPF_TAU_SET_CMD 0b00010010
+#define ANGLE_LPF_TAU_SET_CMD 0b00010011
 #define FOC_VOLTAGE_LPF_TAU_SET_CMD 0b00010001
-#define VELOCITY_FF_SET_CMD 0b00010010
+
+#define VELOCITY_FF_SET_CMD 0b10010010
+
 #define RECONFIGURE_LDM_CMD 0b00100000
 
-// scan path setters
 #define THETA_PHASE_INC_SET_CMD 0b00100001
 #define PHI_PHASE_INC_SET_CMD 0b00100010
 #define THETA_AMPLITUDE_SET_CMD 0b00100011
@@ -39,7 +41,6 @@ using SerialType = decltype(Serial);
 #define THETA_CENTRE_SET_CMD 0b00100101
 #define PHI_CENTRE_SET_CMD 0b00100110
 
-// target setters
 #define TARGET_1_SET_CMD 0b00010000
 #define TARGET_2_SET_CMD 0b00010100
 
@@ -57,6 +58,7 @@ private:
     void handleDisableEnable();
     void handlePlayPause();
     void handleToggleControlMode();
+
     void handleTarget1Set(float data);
     void handleTarget2Set(float data);
     void handleVelocityPSet(float data);
@@ -67,17 +69,22 @@ private:
     void handleAngleISet(float data);
     void handleAngleDSet(float data);
     void handleAngleRampSet(float data);
-    void handleSensorVelocityLPFSet(float data);
-    void handleFOCVoltageLPFSet(float data);
+
+    void handleVelocityLPFTauSet(float data);
+    void handleAngleLPFTauSet(float data);
+    void handleFOCVoltageLPFTauSet(float data);
+
     void handleVelocityFeedForwardSet(float data);
+
     void handleReconfigureLDM(float data);
+    
     void handleThetaPhaseIncSet(float data);
     void handlePhiPhaseIncSet(float data);
     void handleThetaAmplitudeSet(float data);
     void handlePhiAmplitudeSet(float data);
     void handleThetaCentreSet(float data);
     void handlePhiCentreSet(float data);
-   
+
 
     StateMachine& stateMachine;
     FOCController& focController1;

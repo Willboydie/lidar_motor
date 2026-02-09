@@ -23,6 +23,7 @@ private:
     void startup_pwm_pair (IMXRT_FLEXPWM_t * flexpwm, int submodule, int channel);
 
     void stopPwmHardware(void* params) override;
+    void cleanupParams(void* params) override;
 };
 
 

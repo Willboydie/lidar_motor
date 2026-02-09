@@ -20,7 +20,7 @@ The current through a coil creates a magnetic force in the direction that coil f
 So we have three force vectors acting on the magnet pizza at any one time.
 The direction of the force on the magnet at any one time is dependent not only on the currents on each of the coils but also the angular 
 position of the pizza.
-More specifically, the angle which matters to the force is the angle of the magnetic's magnetic field.
+More specifically, the angle which matters to the force is the angle of the magnetic field.
 Because the pizza essentially repeats its North, South, North, South pattern N times, magnetic north repeats itself N times in one full mechanical
 rotation.
 So, to repeat, the force on the rotor (which is a pizza magnet) at any one time is determined by the angle of magnetic north of the pizza in
@@ -48,3 +48,11 @@ and the integral of the error over time (for a bias correction effect). The outp
 P * error + I * integral of error + D * derivative of error
 where P, I, D are constants: the proportional, integral, and derivative gains respectively.
 
+
+VELOCITY RIPPLE
+Its frequency and amplitude which matter. Stay below the frequency bandwidth of the rangefinder. Thus keep velocity ripple << 10KHz.
+
+Note on NOTCH FILTERS
+For noise between A and B....
+f₀ = (A + B) / 2
+Q  = f₀ / (B - A)

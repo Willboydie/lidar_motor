@@ -1,6 +1,9 @@
-#include "Motor.hpp"
+#pragma once
+
 #include "../utils/constants.h"
 #include "../utils/tweakable_params.h"
+#include "Motor.hpp"
+#include "Arduino.h"
 
 #define GM2804_POLE_PAIRS 7
 #define GM2804_PHASE_RESISTANCE 9.0f

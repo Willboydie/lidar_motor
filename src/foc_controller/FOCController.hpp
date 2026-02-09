@@ -6,13 +6,15 @@
 #include "../pwm_driver/PWMDriver.hpp"
 #include "../pid_control/PIDControl.hpp"
 #include "../motor/Motor.hpp"
+#include "../filter/LowPassFilter.hpp"
 #include "../utils/constants.h"
 #include "../utils/quick_defs.h"
 #include "../utils/tweakable_params.h"
 #include "../state_machine/StateMachine.hpp"
 
-#define VELOCITY_DT_US  (1000000UL / VELOCITY_LOOP_HZ)
-#define ANGLE_DT_US     (1000000UL / ANGLE_LOOP_HZ)
+constexpr unsigned long VELOCITY_DT_US  = (1000000UL / VELOCITY_LOOP_HZ);
+constexpr unsigned long ANGLE_DT_US     = (1000000UL / ANGLE_LOOP_HZ);
+constexpr unsigned long CURRENT_DT_US   = (1000000UL / CURRENT_LOOP_HZ);
 
 class FOCController {
 public:
@@ -22,6 +24,7 @@ public:
     void deinit();
     void enable();
     void disable();
+    void calibrate();
     bool loop();
 
     float getAngularVelocity() { return angular_velocity; }
@@ -38,7 +41,7 @@ public:
     float getMechanicalOffset() { return motor_electrical_offset; }
     float getElectricalOffset() { return motor_electrical_offset; }
 
-    void setControlMode(ControlMode _controlMode) { controlMode = _controlMode; }
+    void setControlMode(ControlMode _controlMode);
     void setTargetAngle(float _target_world_angle);
     void setTargetVelocity(float _target_velocity) { target_velocity = _target_velocity; }
     void setVelocityP(float _velocity_p) { PID_velocity_controller.setP(_velocity_p); }
@@ -49,7 +52,7 @@ public:
     void setAngleI(float _angle_i) { PID_angle_controller.setI(_angle_i); }
     void setAngleD(float _angle_d) { PID_angle_controller.setD(_angle_d); }
     void setAngleRamp(float _angle_ramp) { PID_angle_controller.setRamp(_angle_ramp); }
-    void setFOCVoltageLPF(float _foc_voltage_lpf) { LPF_voltage.setTau(_foc_voltage_lpf); }
+    void setFOCVoltageLPFTau(float _foc_voltage_lpf_tau) { LPF_voltage.setTau(_foc_voltage_lpf_tau); }
     void setVelocityFeedForward(float gain) { K_vff = gain; }
 
     // Angle Tracking
@@ -68,6 +71,9 @@ private:
 
     void setPhaseVoltage();
     float calculate_electrical_angle();
+
+    float calibrateLoopPeriod(uint16_t num_samples);
+    void setLoopPeriod();
     
     // state variables
     float angular_velocity;
@@ -85,6 +91,8 @@ private:
     uint32_t last_current_us  = 0;
     uint32_t last_velocity_us = 0;
     uint32_t last_angle_us    = 0;
+    uint32_t last_sensor_update_us = 0;
+
 
     // FOC Key Values
     float Iq = 0.0f;
@@ -112,6 +120,7 @@ private:
     float K_vff = 0.0f;   // A / (rad/s) - velocity feedforward gain
   
     bool enabled = false;
+    bool initialised = false;
     ControlMode controlMode = ANGLE;
 
     // motor constants

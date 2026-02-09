@@ -16,10 +16,10 @@
 #define _isset(a) ( (a) != (NOT_SET) )
 #define _UNUSED(v) (void) (v)
 #define _powtwo(x) (1 << (x))
-
 #define _swap(a, b) { auto temp = a; a = b; b = temp; }
 
-static inline float toRadians(float angle) { return angle * _2PI / (float)CPR; }
+constexpr float ADAPTED_CPR_MULTIPLIER = (_2PI / static_cast<float>(ADAPTED_CPR));
+static inline float toRadians(float angle) { return angle * ADAPTED_CPR_MULTIPLIER; }
 
 static inline float worldToLocal(int motor_number, float world_angle) { return motor_number == 1 ? -world_angle + WORLD_OFFSET_X : -world_angle + WORLD_OFFSET_Y; }
 
@@ -28,6 +28,16 @@ static inline float normalise_angle(float angle){
   float a = fmod(angle, _2PI);
   return a >= 0 ? a : (a + _2PI);
 }
+
+static constexpr float eps = SOFT_DEADBAND_WIDTH;
+static constexpr float one_over_eps = 1.0f / SOFT_DEADBAND_WIDTH;
+static inline float softDeadband(float v) {
+  return fabs(v) > eps ? v : v * (fabs(v) * one_over_eps);
+}
+static constexpr float hard_eps = HARD_DEADBAND_WIDTH;
+static inline float hardDeadband(float v) { return fabs(v) > eps ? v : 0.0f; }
+
+static inline uint16_t discardBits(uint16_t x) { return (x + (1 << (SENSOR_DISCARD_BITS - 1))) >> SENSOR_DISCARD_BITS; }  // with rounding
 
 
 // function approximating the sine calculation by using fixed size array

@@ -31,16 +31,17 @@ void Interface::printFOCStatus(FOCController& focController) {
         display_angle += WORLD_OFFSET_Y; 
         target_angle += WORLD_OFFSET_Y;
     }
-    serial.print("Mech angle: " + String(display_angle, 3));
+    // serial.print("Mech angle: " + String(display_angle, 3));
     // serial.print("  |  E angle: " + String(motor.getElectricalAngle(), 3));
-    serial.print("  |  Target A: " + String(target_angle, 3));
-    serial.print("  |  V: " + String(-focController.getAngularVelocity(), 3));
-    serial.print("  |  A error: " + String(focController.getAngularError(), 3));
-    serial.print("  |  Target v: " + String(-focController.getTargetVelocity(), 3));
-    serial.print("  |  V error: " + String(focController.getVelocityError(), 3));
+    // serial.print("  |  Target A: " + String(target_angle, 3));
+    serial.print("Vel: " + String(-focController.getAngularVelocity(), 3));
+    // serial.print("  |  A error: " + String(focController.getAngularError(), 3));
+    serial.print("  |  Target: " + String(-focController.getTargetVelocity(), 3));
+    serial.print("  |  Err: " + String(focController.getVelocityError(), 3));
     serial.print("  |  Target Iq: " + String(focController.getTargetQCurrent(), 3));
-    serial.print("  |  Vq: " + String(focController.getVq(), 3));
-    serial.println("  |  LDM distance: " + String(ldm.getLatestDistance()));
+    // serial.print("  |  Vq: " + String(focController.getVq(), 3));
+    // serial.print("  |  LDM distance: " + String(ldm.getLatestDistance()));
+    serial.println();
 }
 
 
@@ -105,12 +106,15 @@ void Interface::processCommand(uint8_t cmd, float data) {
         case ANGLE_RAMP_SET_CMD:
             handleAngleRampSet(data);
             break;
-        case SENSOR_VELOCITY_LPF_TAU_SET_CMD:
-            handleSensorVelocityLPFSet(data);
+        case VELOCITY_LPF_TAU_SET_CMD:
+            handleVelocityLPFTauSet(data);
+            break;
+        case ANGLE_LPF_TAU_SET_CMD:
+            handleAngleLPFTauSet(data);
             break;
         case FOC_VOLTAGE_LPF_TAU_SET_CMD:
-            handleFOCVoltageLPFSet(data);
-            break; 
+            handleFOCVoltageLPFTauSet(data);
+            break;
         case VELOCITY_FF_SET_CMD:
             handleVelocityFeedForwardSet(data);
             break;
@@ -158,6 +162,10 @@ void Interface::handleDisableEnable() {
 }
 
 void Interface::handlePlayPause() {
+    if (stateMachine.controlMode != ANGLE) {
+        serial.println("Control mode must be ANGLE to scan");
+        return;
+    }
     if (stateMachine.scanning) {
         stateMachine.scanning = false;
         serial.println("Scanning paused");
@@ -248,16 +256,23 @@ void Interface::handleAngleRampSet(float data) {
     serial.println("Angle ramp set to: " + String(data));
 }
 
-void Interface::handleSensorVelocityLPFSet(float data) {
-    sensor1.setSensorVelocityLPF(data);
-    sensor2.setSensorVelocityLPF(data);
-    serial.println("Sensor velocity LPF set to: " + String(data));
+
+void Interface::handleVelocityLPFTauSet(float data) {
+    sensor1.setVelocityLPFTau(data);
+    sensor2.setVelocityLPFTau(data);
+    serial.println("Velocity LPF tau set to: " + String(data, 8));
 }
 
-void Interface::handleFOCVoltageLPFSet(float data) {
-    focController1.setFOCVoltageLPF(data);
-    focController2.setFOCVoltageLPF(data);
-    serial.println("FOC voltage LPF set to: " + String(data));
+void Interface::handleAngleLPFTauSet(float data) {
+    sensor1.setAngleLPFTau(data);
+    sensor2.setAngleLPFTau(data);
+    serial.println("Angle LPF tau set to: " + String(data, 8));
+}
+
+void Interface::handleFOCVoltageLPFTauSet(float data) {
+    focController1.setFOCVoltageLPFTau(data);
+    focController2.setFOCVoltageLPFTau(data);
+    serial.println("FOC voltage LPF tau set to: " + String(data, 8));
 }
 
 void Interface::handleVelocityFeedForwardSet(float data) {
@@ -307,3 +322,4 @@ void Interface::handlePhiCentreSet(float data) {
     scanPath.setPhiCentre(data);
     serial.println("Phi centre set to: " + String(data));
 }
+

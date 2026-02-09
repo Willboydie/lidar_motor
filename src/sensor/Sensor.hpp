@@ -3,11 +3,14 @@
 #include "../utils/constants.h"
 #include "../utils/tweakable_params.h"
 #include "../utils/quick_defs.h"
-#include "../low_pass_filter/LowPassFilter.hpp"
+#include "../filter/LowPassFilter.hpp"
+#include "../filter/MeanFilter.hpp"
+#include "../filter/NotchFilter.hpp"
 #include "Arduino.h"
 
 class Sensor {
 public:
+    Sensor();
     virtual ~Sensor() = default;
     
     virtual bool init() = 0;
@@ -16,30 +19,50 @@ public:
     void enable();
     void disable();
     bool update();
+    virtual void updateDiagnostics() = 0;
 
-    float getLatestAbsoluteRotorAngle();
-    float getLatestRotorAngle();
-    float getAngularVelocity();
-    unsigned long getLatestTimestamp();
+    float getLatestRotorAngle() { return rotor_angle; }
+    float getAngularVelocity() { return angular_velocity; }
+    float getRawAngle() { return static_cast<float>(raw_sensor_angle); }
+    float getCumulatedRotations() { return cumulated_rotations; }
 
-    void setSensorVelocityLPF(float _sensor_velocity_lpf) { angular_velocity_LPF.setTau(_sensor_velocity_lpf); }
+    uint16_t getSensorMagnitude() { return magnitude; }
+    uint16_t getAGCValue() { return agc; }
+    uint16_t getOCFValue() { return ocf; }
+    uint16_t getCOFValue() { return cof; }
+    uint16_t getCompLowValue() { return compLow; }
+    uint16_t getCompHighValue() { return compHigh; }
+
+    void setVelocityLPFTau(float _tau) { velocityLPF.setTau(_tau); }
+    void setAngleLPFTau(float _tau) { angleLPF.setTau(_tau); }
 
 private:
+    virtual float getSensorAngle() = 0;
 
-    virtual uint16_t getRawCount() = 0;
+    float raw_sensor_angle = 0.0f;
+    float previous_sensor_angle = 0.0f;
+    float cumulated_rotations = 0.0f;
+    float prev_angle = 0.0f;
+    float rotor_angle = 0.0f;
+    float angular_velocity = 0.0f;
+    uint32_t t0 = 0;
 
-    _LowPassFilter angular_velocity_LPF = _LowPassFilter(ANGULAR_VELOCITY_LPF_TAU);
+    bool first_measurement = true;
 
-    int32_t absolute_rotor_angle = 0;
-    int32_t rotor_angle0 = 0;
-    int32_t rotor_angle1 = 0;
-    int32_t angular_velocity = 0;
-    unsigned long timestamp0 = 0;
-    unsigned long timestamp1 = 0;
-    int32_t cumulated_rotations = 0;
+    _LowPassFilter velocityLPF{VELOCITY_LOW_PASS_FILTER_TAU};
+    _LowPassFilter angleLPF{ANGLE_LOW_PASS_FILTER_TAU};
+
+    MeanFilter meanFilter;
 
 protected:
     bool enabled = false;
     bool initialised = false;
-    bool first_measurement = true;
+
+    // Diagnostics 
+    uint16_t magnitude = 0;
+    uint16_t agc = 0;
+    uint16_t ocf = 0;
+    uint16_t cof = 0;
+    uint16_t compLow = 0;
+    uint16_t compHigh = 0;
 };

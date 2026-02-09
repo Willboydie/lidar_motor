@@ -1,6 +1,11 @@
+FILTERING
+    Push velocity estimation rate as fast as possible.
+    Try an acceleration constraint.
+    Look into more LPF options (see https://chatgpt.com/share/69864174-d03c-800e-973a-fc6fab57e0ec)
+    "Maximise the noise frequency then brutally cut it out!"
+    Maintain an estimate of the distribution of the sensor bins (independent of position)
+        -- use this estimate to predict the true sensor reading, tracking the distribution.
 
-VELOCITY RIPPLE
-    1. Command a constant velocity and sample from the encoder at 20KHz+. Fit a straight line to the data and find the RMS error.
 
 LiDAR CONFIG TESTING
     1. Take identical scans in the car park using each of the GARMIN's preset configs.
@@ -10,7 +15,6 @@ TEST SCAN
 
 
 I M P R O V E M E N T S
-- Implement the entire "backend" with integer arithmetic.
 - Ship program to STM32 G4
 - Add current sensing
 - LUT interpolation
@@ -24,3 +28,4 @@ G O A L S
 ISSUES
 electrical offset test rig
 correct the sensor direction and find true elec offsets
+find the true world angles

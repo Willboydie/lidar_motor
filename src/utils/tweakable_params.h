@@ -1,80 +1,23 @@
 #ifndef TWEAKABLE_PARAMS_H
 #define TWEAKABLE_PARAMS_H
 
-// Pins
-// motor 1
-#define N1_1 6  // orange
-#define N2_1 36 // yellow
-#define N3_1 37 // green
-#define EN_1 22 // blue
-#define SENSOR_SPI_CS_1 10 // white
-// motor 2
-#define N1_2 7  // orange
-#define N2_2 8 // yellow
-#define N3_2 9 // green
-#define EN_2 23 // blue
-#define SENSOR_SPI_CS_2 15 // white
-// // miso = 12 (yellow), mosi = 11 (black), sck = 13 (red)
-
-// Garmin Pins
-#define GARMIN_SCL 19 // green
-#define GARMIN_SDA 18 // blue
-#define GARMIN_MODE_PIN 20  // MODE/STATUS pin for interrupt-driven readings (yellow)
-
-// Motor Parameters
-#define MOTOR_VOLTAGE_LIMIT 12.0f
-#define MOTOR_CURRENT_LIMIT 0.8f
-#define VOLTAGE_POWER_SUPPLY 12.0f
-#define SENSOR_DIRECTION 1 // CCW = 1, CW = -1. GM2804 with AS5048A is CCW.
-
+#include "constants.h"
 
 // PID Controllers 
-#define VELOCITY_P 0.2f
-#define VELOCITY_I 0.2f
+#define VELOCITY_P 0.0f
+#define VELOCITY_I 0.0f
 #define VELOCITY_D 0.0f
 #define VELOCITY_RAMP 0.0f   // limit acceleration
 #define CURRENT_UPPER_LIMIT MOTOR_CURRENT_LIMIT
 #define CURRENT_LOWER_LIMIT -MOTOR_CURRENT_LIMIT
 // -------------------------------------------------
-#define ANGLE_P 10.0f
+#define ANGLE_P 0.0f
 #define ANGLE_I 0.0f
 #define ANGLE_D 0.0f
 #define ANGLE_RAMP 0.0f
-#define VELOCITY_UPPER_LIMIT 1000.0f   // rad/s
-#define VELOCITY_LOWER_LIMIT -1000.0f
+#define VELOCITY_UPPER_LIMIT 15.0f   // rad/s
+#define VELOCITY_LOWER_LIMIT -15.0f
 
-
-// FOC Timing Parameters
-#define VELOCITY_LOOP_HZ  1000    // 1 kHz
-#define ANGLE_LOOP_HZ     200     // 200 Hz
-
-
-// Sensor Parameters
-#define SENSOR_OFFSET_1  5.67f // angle units
-#define SENSOR_OFFSET_2 4.02f // angle units
-#define VELOCITY_MIN_TIME_INCREMENT 100 // 100us
-#define ANGULAR_VELOCITY_LPF_TAU 0.01f
-#define FOC_VOLTAGE_LPF_TAU 0.001f
-#define BIT_RESOLUTION 14
-#define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
-
-
-// Calibration Parameters
-#define ALIGNMENT_VOLTAGE 3.0f // V
-#define WORLD_OFFSET_X 5.30f
-#define WORLD_OFFSET_Y 0.57f
-
-
-// PWM Driver Parameters
-#define PWM_FREQUENCY 25000 // 25khz
-#define PWM_FREQUENCY_MAX 50000 // 50khz
-
-// Angle Tracking Parameters
-#define ANGLE_TRACKING_LIMIT 5000
-#define ANGLE_TRACKING_WINDOW_SIZE 100
-
-// Serial Parameters
-#define BAUD_RATE 460800
 
 // Scan Path Parameters
 #define UPDATE_PERIOD_US 2000 // 2ms / 500Hz
@@ -85,6 +28,40 @@
 #define THETA_CENTRE 0.0
 #define PHI_CENTRE -0.3
 
-#endif
 
-// 0.1 rad diff -> 1 rad/s target vel -> 0.8 A q current
+//Filtering
+#define ANGLE_LOW_PASS_FILTER_TAU 0.0f  // 250Hz cutoff frequency
+#define VELOCITY_LOW_PASS_FILTER_TAU 0.5f  // 150Hz cutoff frequency
+#define FOC_VOLTAGE_LPF_TAU 0.00f
+
+#define SOFT_DEADBAND_WIDTH 0.05f
+#define HARD_DEADBAND_WIDTH 0.001f
+
+#define FILTER_WINDOW_SIZE 80 // N * sensor update rate = window size in seconds
+#define MAX_FILTER_WINDOW_SIZE 128
+
+#define DEFAULT_JITTER_AMPLITUDE 3
+#define DEFAULT_JITTER_PERIOD 1
+
+#define DEFAULT_KALMAN_QA 1e-4f
+#define DEFAULT_KALMAN_R 3e-7f
+
+#define NOTCH_FILTER_FREQ 330.0f // Removing noise centred at 330Hz
+#define NOTCH_FILTER_Q 20.0f // Q = f0 / bandwidth
+#define NOTCH_FILTER_SAMPLE_RATE 80000.0f 
+
+#define SENSOR_DISCARD_BITS 3
+#define ADAPTED_CPR (CPR / (1 << SENSOR_DISCARD_BITS))
+
+#define ACCEL_LIMIT 1000.0f
+
+// FOC Timing
+#define ANGLE_LOOP_HZ     50000
+#define VELOCITY_LOOP_HZ   50000
+#define CURRENT_LOOP_HZ   50000
+#define SENSOR_UPDATE_DT_US 200 // the update rate of the AS5048, 11250Hz
+#define VELOCITY_ESTIMATION_DT_US 890
+#define VELOCITY_ESTIMATE_N (VELOCITY_ESTIMATION_DT_US / SENSOR_UPDATE_DT_US)
+
+
+#endif

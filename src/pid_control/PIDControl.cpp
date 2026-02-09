@@ -6,8 +6,8 @@ PIDControl::PIDControl(float p, float i, float d, float _output_ramp, float _low
     , I(i)
     , D(d)
     , output_ramp(_output_ramp)    // output derivative limit [volts/second]
-    , lower_limit(_lower_limit)         // output supply limit     [amps]
-    , upper_limit(_upper_limit)
+    , upper_limit(_upper_limit)    // max output value from controller
+    , lower_limit(_lower_limit)    // output supply limit     [amps]
     , error_prev(0.0f)
     , output_prev(0.0f)
     , integral_prev(0.0f)
