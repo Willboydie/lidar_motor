@@ -16,10 +16,10 @@ from datetime import datetime
 from pathlib import Path
 from queue import Queue
 
-# Data packet format: command token (0xAB) + float + float + float + uint16 + uint16 (little-endian)
+# Data packet format: command token (0xAB) + float + float + float
 DATA_PACKET_CMD = 0xAB
-PACKET_SIZE = 17  # 1 (cmd) + 4 (float) + 4 (float) + 4 (float) + 2 (uint16) + 2 (uint16)
-PACKET_FORMAT = "<BfffHH"  # little-endian: uint8, float, float, float, uint16, uint16
+PACKET_SIZE = 13  # 1 (cmd) + 4 (float) + 4 (float) + 4 (float)
+PACKET_FORMAT = "<Bfff"  # little-endian: uint8, float, float, float
 PACKET_STRUCT = struct.Struct(PACKET_FORMAT)
 
 # Command format: uint8_t cmd + float data (little-endian)
@@ -469,12 +469,12 @@ class SensorNoiseRecorderUI:
                             buffer = buffer[PACKET_SIZE:]
                             
                             try:
-                                # Unpack packet: uint8_t cmd, float raw, float angle, float velocity, uint16 magnitude, uint16 agc
-                                cmd, raw_value, rotor_angle, angular_velocity, sensor_magnitude, agc_value = PACKET_STRUCT.unpack(packet_bytes)
+                                # Unpack packet: uint8_t cmd, float raw, float angle, float velocity
+                                cmd, raw_value, rotor_angle, angular_velocity = PACKET_STRUCT.unpack(packet_bytes)
                                 
                                 if cmd == DATA_PACKET_CMD:
                                     # Valid packet
-                                    packet_data = (raw_value, rotor_angle, angular_velocity, sensor_magnitude, agc_value, time.time())
+                                    packet_data = (raw_value, rotor_angle, angular_velocity, time.time())
                                     
                                     # Add to display queue (non-blocking - drops oldest if full)
                                     # This doesn't affect recording, which happens immediately below
@@ -577,7 +577,7 @@ class SensorNoiseRecorderUI:
         
         if not self.is_recording:
             # Start recording
-            filename = "alpha_beta.bin"
+            filename = "sensor_data.bin"
             # Use absolute path based on script location
             script_dir = Path(__file__).parent.absolute()
             data_dir = script_dir / "data"
@@ -695,19 +695,17 @@ class SensorNoiseRecorderUI:
         
         # Update display with the latest value (if any)
         if latest_packet is not None:
-            raw_value, rotor_angle, angular_velocity, sensor_magnitude, agc_value, timestamp = latest_packet
+            raw_value, rotor_angle, angular_velocity, timestamp = latest_packet
             self.latest_raw = raw_value
             self.latest_angle = rotor_angle
             self.latest_velocity = angular_velocity
-            self.latest_magnitude = sensor_magnitude
-            self.latest_agc = agc_value
             
             # Only display every Nth value in readout to prevent text widget lag
             self.display_counter += 1
             if self.display_counter >= 10:  # Display every 100th update (roughly every 5 seconds at 20Hz UI update rate)
                 self.readout_text.config(state=tk.NORMAL)
                 self.readout_text.insert(tk.END, 
-                    f"Raw: {raw_value:8.4f}   |   Angle: {rotor_angle:8.3f} rad   |   Velocity: {angular_velocity:8.3f} rad/s   |   Mag: {sensor_magnitude:5d}   |   AGC: {agc_value:3d}\n")
+                    f"Raw: {raw_value:8.4f}   |   Angle: {rotor_angle:8.3f} rad   |   Velocity: {angular_velocity:8.3f} rad/s\n")
                 
                 # Keep only last 50 lines
                 lines = self.readout_text.get("1.0", tk.END).split('\n')
@@ -725,10 +723,6 @@ class SensorNoiseRecorderUI:
             self.angle_label.config(text=f"Angle: {self.latest_angle:.6f} rad")
         if self.latest_velocity is not None:
             self.velocity_label.config(text=f"Velocity: {self.latest_velocity:.6f} rad/s")
-        if self.latest_magnitude is not None:
-            self.magnitude_label.config(text=f"Magnitude: {self.latest_magnitude}")
-        if self.latest_agc is not None:
-            self.agc_label.config(text=f"AGC: {self.latest_agc}")
         
         # Schedule next update
         self.root.after(50, self.update_ui)  # Update every 50ms

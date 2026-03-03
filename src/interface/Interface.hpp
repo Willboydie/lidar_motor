@@ -10,8 +10,6 @@
 #include "utils/quick_defs.h"
 #include "utils/tweakable_params.h"
 
-using SerialType = decltype(Serial);
-
 // state machine
 #define DISABLE_ENABLE_CMD 0b00000001
 #define SCAN_PLAY_PAUSE_CMD 0b00000010
@@ -47,8 +45,15 @@ using SerialType = decltype(Serial);
 
 class Interface {
 public:
-    Interface(SerialType& _serial, StateMachine& _stateMachine, FOCController& _focController1, FOCController& _focController2, Sensor& _sensor1, Sensor& _sensor2, LDM& _ldm, ScanPath& _scanPath);
-    void init();
+    Interface(
+        StateMachine& _stateMachine, 
+        FOCController& _focController1, 
+        FOCController& _focController2, 
+        Sensor& _sensor1, 
+        Sensor& _sensor2, 
+        LDM& _ldm, 
+        ScanPath& _scanPath
+    );
     void processCommand(uint8_t cmd, float data);
     void commandListener();
     void printStatus();
@@ -93,7 +98,6 @@ private:
     Sensor& sensor2;
     LDM& ldm;
     ScanPath& scanPath;
-    SerialType& serial;
     uint8_t cmd;
     float data; // temporary storage for command data
 };

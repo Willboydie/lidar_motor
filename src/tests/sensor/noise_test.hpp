@@ -70,8 +70,8 @@ void noise_test() {
             float unfiltered_rotor_angle = sensor2.getRawAngle();
             float rotor_angle = sensor2.getLatestRotorAngle();
             float angular_velocity = sensor2.getAngularVelocity();
-            uint16_t sensor_magnitude = sensor2.getSensorMagnitude();
-            uint16_t agc_value = sensor2.getAGCValue();
+            // uint16_t sensor_magnitude = sensor2.getSensorMagnitude();
+            // uint16_t agc_value = sensor2.getAGCValue();
             
             // Send packet as binary (little-endian)
             // uint8_t command_token (1 byte)
