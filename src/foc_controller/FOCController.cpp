@@ -132,6 +132,8 @@ void FOCController::enable() {
     if (enabled) return;
     pwm_driver.enable();
     sensor.enable();
+    PID_angle_controller.reset();
+    PID_velocity_controller.reset();
     enabled = true;
 }
 
@@ -160,8 +162,9 @@ void FOCController::setControlMode(ControlMode _controlMode) {
 }
 
 void FOCController::setTargetAngle(float _target_world_angle) { 
-    float target_local_angle = worldToLocal(motor_number, _target_world_angle); 
-    target_angle = target_local_angle; 
+    // float target_local_angle = worldToLocal(motor_number, _target_world_angle); 
+    // target_angle = target_local_angle; 
+    target_angle =  _target_world_angle;
 }
 
 

@@ -59,6 +59,7 @@ void PIDControl::reset() {
     integral_prev = 0.0f;
     output_prev = 0.0f;
     error_prev = 0.0f;
+    timestamp_prev = micros();
 }
 
 // // Integer overload - converts to float internally for precision, returns rounded int32_t

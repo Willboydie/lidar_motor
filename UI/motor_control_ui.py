@@ -14,7 +14,7 @@ from queue import Queue
 from tkinter import scrolledtext, ttk
 import os
 
-import serial
+import serial as serial
 import serial.tools.list_ports
 
 # Incoming data packet identifier (from DataStream.cpp)

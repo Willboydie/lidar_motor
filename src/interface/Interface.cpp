@@ -13,22 +13,14 @@ Interface::Interface(StateMachine& _stateMachine, FOCController& _focController1
 
 void Interface::printFOCStatus(FOCController& focController) {
     if (!stateMachine.enabled) return;
-    float display_angle = -focController.getMechanicalAngle();
     float target_angle = -focController.getTargetAngle();
-    if (focController.motor_number == 1) {
-        display_angle += WORLD_OFFSET_X; 
-        target_angle += WORLD_OFFSET_X;
-    }
-    else if (focController.motor_number == 2) {
-        display_angle += WORLD_OFFSET_Y; 
-        target_angle += WORLD_OFFSET_Y;
-    }
-    Serial.print("Mech angle: " + String(display_angle, 3));
+
+    Serial.print("Mech angle: " + String(focController.getMechanicalAngle(), 3));
     Serial.print("  |  E angle: " + String(focController.getElectricalAngle(), 3));
-    Serial.print("  |  Target A: " + String(target_angle, 3));
+    // Serial.print("  |  Target A: " + String(focController.getTargetAngle(), 3));
     Serial.print("  |  Vel: " + String(-focController.getAngularVelocity(), 3));
     // Serial.print("  |  A error: " + String(focController.getAngularError(), 3));
-    // Serial.print("  |  Target: " + String(-focController.getTargetVelocity(), 3));
+    Serial.print("  |  Target V: " + String(focController.getTargetVelocity(), 3));
     // Serial.print("  |  Err: " + String(focController.getVelocityError(), 3));
     // Serial.print("  |  Target Iq: " + String(focController.getTargetQCurrent(), 3));
     // Serial.print("  |  Vq: " + String(focController.getVq(), 3));
