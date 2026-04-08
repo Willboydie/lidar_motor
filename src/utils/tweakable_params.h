@@ -4,15 +4,15 @@
 #include "constants.h"
 
 // PID Controllers 
-#define VELOCITY_P 0.0f
+#define VELOCITY_P 1.0f
 #define VELOCITY_I 0.0f
 #define VELOCITY_D 0.0f
 #define VELOCITY_RAMP 0.0f   // limit acceleration
 #define CURRENT_UPPER_LIMIT MOTOR_CURRENT_LIMIT
 #define CURRENT_LOWER_LIMIT -MOTOR_CURRENT_LIMIT
 // -------------------------------------------------
-#define ANGLE_P 0.0f
-#define ANGLE_I 0.0f
+#define ANGLE_P 1.0f
+#define ANGLE_I 0.5f
 #define ANGLE_D 0.0f
 #define ANGLE_RAMP 0.0f
 #define VELOCITY_UPPER_LIMIT 15.0f   // rad/s
@@ -30,9 +30,9 @@
 
 
 //Filtering
-#define ANGLE_LOW_PASS_FILTER_TAU 0.0f  // 250Hz cutoff frequency
-#define VELOCITY_LOW_PASS_FILTER_TAU 0.5f  // 150Hz cutoff frequency
-#define FOC_VOLTAGE_LPF_TAU 0.00f
+#define ANGLE_LOW_PASS_FILTER_TAU 0.0f
+#define VELOCITY_LOW_PASS_FILTER_TAU 0.2f
+#define FOC_VOLTAGE_LPF_TAU 0.0f
 
 #define SOFT_DEADBAND_WIDTH 0.05f
 #define HARD_DEADBAND_WIDTH 0.001f

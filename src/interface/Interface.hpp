@@ -57,7 +57,7 @@ public:
     void processCommand(uint8_t cmd, float data);
     void commandListener();
     void printStatus();
-    void printFOCStatus(FOCController& focController);
+    void printFOCStatus(FOCController& focController, Sensor& sensor);
     
 private:
     void handleDisableEnable();

@@ -29,6 +29,10 @@ static inline float normalise_angle(float angle){
   return a >= 0 ? a : (a + _2PI);
 }
 
+static inline float findAngularError(float a, float b) {
+ return normalise_angle(a - b + _PI) - _PI;
+}
+
 static constexpr float eps = SOFT_DEADBAND_WIDTH;
 static constexpr float one_over_eps = 1.0f / SOFT_DEADBAND_WIDTH;
 static inline float softDeadband(float v) {

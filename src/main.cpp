@@ -5,6 +5,7 @@
 // #include "tests/scan_path/sine_path_test.hpp"
 // #include "tests/sensor/noise_test.hpp"
 // #include "tests/ldm/ldm_test.hpp"
+// #include "tests/sensor/velocity_spike_test.hpp"
 
 // main imports
 #include "Arduino.h"
@@ -63,6 +64,7 @@ void setup() {
   // sine_path_test();
   // noise_test();
   // ldm_test();
+  // velocity_spike_test();
 }
 
 void loop() {
@@ -71,7 +73,7 @@ void loop() {
     cmdTime = millis();
     interface.commandListener();
     if ( stateMachine.enabled ) {
-      interface.printFOCStatus(focController1);
+      interface.printFOCStatus(focController1, sensor1);
     }
   }
 

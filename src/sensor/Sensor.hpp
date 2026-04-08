@@ -22,9 +22,16 @@ public:
     virtual void updateDiagnostics() = 0;
 
     float getLatestRotorAngle() { return rotor_angle; }
-    float getAngularVelocity() { return angular_velocity; }
+    float getRawAngularVelocity() { return raw_angular_velocity; }
+    float getFilteredAngularVelocity() { return filtered_angular_velocity; }
     float getRawAngle() { return static_cast<float>(raw_sensor_angle); }
     float getCumulatedRotations() { return cumulated_rotations; }
+
+    static constexpr uint32_t DEBUG_N = 100;
+    const float* getDebugData() const { return debug_data; }
+    uint32_t getDebugCount() const { return debug_idx; }
+    bool isDebugCaptureComplete() const { return debug_idx >= DEBUG_N; }
+    void clearDebugData();
 
     uint16_t getSensorMagnitude() { return magnitude; }
     uint16_t getAGCValue() { return agc; }
@@ -40,14 +47,18 @@ private:
     virtual float getSensorAngle() = 0;
 
     float raw_sensor_angle = 0.0f;
-    float previous_sensor_angle = 0.0f;
+    float previous_raw_angle = 0.0f;
     float cumulated_rotations = 0.0f;
-    float prev_angle = 0.0f;
+    float previous_rotor_angle = 0.0f;
     float rotor_angle = 0.0f;
-    float angular_velocity = 0.0f;
+    float raw_angular_velocity = 0.0f;
+    float filtered_angular_velocity = 0.0f;
     uint32_t t0 = 0;
 
     bool not_first_measurement = false;
+
+    float debug_data[DEBUG_N * 5] = {};
+    uint32_t debug_idx = 0;
 
     _LowPassFilter velocityLPF{VELOCITY_LOW_PASS_FILTER_TAU};
     _LowPassFilter angleLPF{ANGLE_LOW_PASS_FILTER_TAU};

@@ -11,28 +11,22 @@ Interface::Interface(StateMachine& _stateMachine, FOCController& _focController1
 {}
 
 
-void Interface::printFOCStatus(FOCController& focController) {
+void Interface::printFOCStatus(FOCController& focController, Sensor& sensor) {
     if (!stateMachine.enabled) return;
     float target_angle = -focController.getTargetAngle();
 
     Serial.print("Mech angle: " + String(focController.getMechanicalAngle(), 3));
-    Serial.print("  |  E angle: " + String(focController.getElectricalAngle(), 3));
-    // Serial.print("  |  Target A: " + String(focController.getTargetAngle(), 3));
-    Serial.print("  |  Vel: " + String(-focController.getAngularVelocity(), 3));
-    // Serial.print("  |  A error: " + String(focController.getAngularError(), 3));
-    Serial.print("  |  Target V: " + String(focController.getTargetVelocity(), 3));
-    // Serial.print("  |  Err: " + String(focController.getVelocityError(), 3));
-    // Serial.print("  |  Target Iq: " + String(focController.getTargetQCurrent(), 3));
+    // Serial.print(" | E angle: " + String(focController.getElectricalAngle(), 3));
+    // Serial.print(" | Target A: " + String(focController.getTargetAngle(), 3));
+    Serial.print(" | A err: " + String(focController.getAngularError(), 3));
+    // Serial.print(" | Raw Vel: " + String(sensor.getRawAngularVelocity(), 3));
+    // Serial.print(" | Fil Vel: " + String(focController.getAngularVelocity(), 3));
+    // Serial.print("  |  Target V: " + String(focController.getTargetVelocity(), 3));
+    Serial.print(" | V err: " + String(focController.getVelocityError(), 3));
+    Serial.print(" | Target Iq: " + String(focController.getTargetQCurrent(), 3));
     // Serial.print("  |  Vq: " + String(focController.getVq(), 3));
     // Serial.print("  |  LDM distance: " + String(ldm.getLatestDistance()));
     Serial.println();
-}
-
-
-void Interface::printStatus() {
-    if (!stateMachine.enabled) return;
-    printFOCStatus(focController1);
-    printFOCStatus(focController2);
 }
 
 void Interface::commandListener() {

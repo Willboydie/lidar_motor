@@ -52,17 +52,17 @@ TARGET_2_SET_CMD = 0b00010100
 
 # Default values mirrored from `src/utils/tweakable_params.h` and scan path defaults
 DEFAULTS = {
-    "velocity_p": 0.0,
+    "velocity_p": 1.0,
     "velocity_i": 0.0,
     "velocity_d": 0.0,
     "velocity_ramp": 0.0,
-    "angle_p": 0.0,
-    "angle_i": 0.0,
+    "angle_p": 1.0,
+    "angle_i": 0.5,
     "angle_d": 0.0,
     "angle_ramp": 0.0,
-    "foc_voltage_lpf_tau": 0.001,
+    "foc_voltage_lpf_tau": 0.0,
     "kalman_qa": 1e-9,
-    "lpf_velocity_tau": 0.001,
+    "lpf_velocity_tau": 0.2,
     "velocity_ff": 0.0,
     "notch_filter_freq": 50.0,
     "notch_filter_q": 1.0,

@@ -53,14 +53,15 @@ bool FOCController::loop() {
     }
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
-    angular_velocity = sensor.getAngularVelocity();
+    angular_velocity = sensor.getFilteredAngularVelocity();
 
     if (angle_tracking_count < ANGLE_TRACKING_LIMIT) {
         angle_tracking[angle_tracking_count++] = mechanical_angle;
     }
 
     if (controlMode == ANGLE) {
-        angular_error = target_angle - mechanical_angle;
+        // angular_error = target_angle - mechanical_angle;
+        angular_error = findAngularError(target_angle, mechanical_angle);
         target_velocity = PID_angle_controller(angular_error);
     }
 
