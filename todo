@@ -1,8 +1,3 @@
-BUGS
-False velocity values after disbale/enable which settle down with time.
-
-
-
 BEFORE READING ANY OF THIS, A PLEDGE. I, WILLIAM BOYD, WILL ALWAYS WORK IN SECONDARY GIT BRANCHES -- NEVER ON MAIN !!!!!
 
 
@@ -29,8 +24,9 @@ LiDAR CONFIG TESTING
 STM32G4 SHIP (USE A GIT BRANCH !!)
 
 1. Mechanical / physical
-    Ask Fraser to solder the horizontal headers.
-    Stack boards and verify physical pin alignment.
+    Solder ADC and PWM pin bridges.
+    Identify 2 CS pins.
+    Remake the garmin SPI wire.
 
 2. Power & ground (add this)
     Map motor ground vs MCU ground.
@@ -44,11 +40,6 @@ STM32G4 SHIP (USE A GIT BRANCH !!)
         TIM1 → Motor A
         TIM8 → Motor B
 
-4. SPI buses
-    Identify both SPI busses.
-    Decide which peripherals go where.
-    Make sure they don’t collide with PWM/ADC pins.
-
 5. Current sensing hardware
     Identify ADC pins for inline sensing.
     Decide:
@@ -57,9 +48,6 @@ STM32G4 SHIP (USE A GIT BRANCH !!)
 
 6. Software base
     Add STM32G4 driver class (cleaned).
-    Get voltage mode spinning first.
-    This is critical:
-    Do NOT touch current sensing until both motors spin open-loop.
 
 7. Current sensing theory
     Understand inline sensing routine.
@@ -82,11 +70,10 @@ I M P R O V E M E N T S
 - LUT interpolation
 - electrical offset test rig
 - correct the sensor direction and find true elec offsets
-- Find the true world angles
 - Make startup smoother - remove jerk and glitch.
 - Reduce lag improve reactance (reduce noise) (see above)
 
 
 G O A L S
 - Self optimising PID?
-- Exporting correlation records + angle lists (+ timestamps?)
+- Garmin: exporting correlation records + angle lists (+ timestamps?)
