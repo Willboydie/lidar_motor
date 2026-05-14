@@ -11,9 +11,9 @@ bool PWMDriver::init() {
 
   // Set the pwm frequency to the pins
   // hardware specific function - depending on driver and mcu
-  params = configureCenterAligned3PWM(pwm_frequency, n1, n2, n3);
+  params = configure3PWM(pwm_frequency, n1, n2, n3);
 
-  digitalWriteFast(en, HIGH);  // Activate the driver
+  digitalWrite(en, HIGH);  // Activate the driver
 
   return params!=nullptr; 
 }
@@ -31,14 +31,14 @@ void PWMDriver::setPwm(float Va, float Vb, float Vc) {
   duty_cycleB = _constrain(Vb / voltage_power_supply, 0.0f , 1.0f );
   duty_cycleC = _constrain(Vc / voltage_power_supply, 0.0f , 1.0f );
   // hardware specific writing
-  writeCenterAligned3PWM(duty_cycleA, duty_cycleB, duty_cycleC, params);
+  write3PWM(duty_cycleA, duty_cycleB, duty_cycleC, params);
 }
 
 
 void PWMDriver::disable() {
   if (!enabled) return;
   setPwm(0.0f, 0.0f, 0.0f);
-  digitalWriteFast(en, LOW);
+  digitalWrite(en, LOW);
   Serial.println("PWMDriver disabled");
   enabled = false;
 }
@@ -46,7 +46,7 @@ void PWMDriver::disable() {
 
 void PWMDriver::enable() {
   if (enabled) return;
-  digitalWriteFast(en, HIGH);
+  digitalWrite(en, HIGH);
   Serial.println("PWMDriver enabled");
   enabled = true;
 }

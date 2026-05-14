@@ -1,5 +1,5 @@
 #pragma once
-#include "PWMDriver.hpp"
+#include "../PWMDriver.hpp"
 
 class PWMDriverTeensy41: public PWMDriver {
 
@@ -7,10 +7,10 @@ public:
   PWMDriverTeensy41(int _n1, int _n2, int _n3, int _en) : PWMDriver(_n1, _n2, _n3, _en) {}
 
 private:
-    void writeCenterAligned3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params) override; 
+    void write3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params) override; 
     void write_pwm_on_pin(IMXRT_FLEXPWM_t * flexpwm, unsigned int submodule, uint8_t channel, float duty);
 
-    void* configureCenterAligned3PWM(long pwm_frequency, const int pinA, const int pinB, const int pinC) override;
+    void* configure3PWM(long pwm_frequency, const int pinA, const int pinB, const int pinC) override;
     void setup_pwm_timer_submodule (IMXRT_FLEXPWM_t * flexpwm, int submodule, bool ext_sync,  const long frequency);
     int get_channel(uint8_t pin);
     IMXRT_FLEXPWM_t* get_flexpwm(uint8_t pin);

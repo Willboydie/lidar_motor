@@ -34,12 +34,12 @@ private:
   float duty_cycleB;
   float duty_cycleC;
 
-  float pwm_frequency = PWM_FREQUENCY;
+  float pwm_frequency = MOTOR_PWM_FREQUENCY;
   float voltage_power_supply = VOLTAGE_POWER_SUPPLY;
   float voltage_limit = MOTOR_VOLTAGE_LIMIT;
 
-  virtual void* configureCenterAligned3PWM(long pwm_frequency, const int pinA, const int pinB, const int pinC) = 0;
-  virtual void writeCenterAligned3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params) = 0;
+  virtual void* configure3PWM(long pwm_frequency, const int pinA, const int pinB, const int pinC) = 0;
+  virtual void write3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params) = 0;
   virtual void stopPwmHardware(void* params) = 0;
   virtual void cleanupParams(void* params) = 0;
 

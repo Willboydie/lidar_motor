@@ -21,12 +21,15 @@ LiDAR CONFIG TESTING
     1. Take identical scans in the car park using each of the GARMIN's preset configs.
 
 
-STM32G4 SHIP (USE A GIT BRANCH !!)
+STM32G4 SHIP
+
+todo:
+Create a clean file structure for STM32G4 PWM.
+make everything .hpp files
+
 
 1. Mechanical / physical
-    Solder ADC and PWM pin bridges.
     Identify 2 CS pins.
-    Remake the garmin SPI wire.
 
 2. Power & ground (add this)
     Map motor ground vs MCU ground.
@@ -34,20 +37,14 @@ STM32G4 SHIP (USE A GIT BRANCH !!)
     Ensure ADC inputs never exceed 3.3V.
 
 3. Pin mapping
-    Identify PWM pins Shield 3.2 uses.
-    Cross-reference with STM32G4 timer channels.
     Lock in:
         TIM1 → Motor A
         TIM8 → Motor B
 
 5. Current sensing hardware
-    Identify ADC pins for inline sensing.
     Decide:
         Which 2 phases per motor.
         Which OPAMPs (internal or external).
-
-6. Software base
-    Add STM32G4 driver class (cleaned).
 
 7. Current sensing theory
     Understand inline sensing routine.
@@ -70,7 +67,6 @@ I M P R O V E M E N T S
 - LUT interpolation
 - electrical offset test rig
 - correct the sensor direction and find true elec offsets
-- Make startup smoother - remove jerk and glitch.
 - Reduce lag improve reactance (reduce noise) (see above)
 
 

@@ -42,8 +42,10 @@
 
 
 // PWM Driver
-#define PWM_FREQUENCY 25000 // 25khz
-#define PWM_FREQUENCY_MAX 50000 // 50khz
+// NB: stm32duino's pins_arduino.h defines PWM_FREQUENCY=1000 (default for
+// analogWrite). Prefix our project's macro to avoid that collision.
+#define MOTOR_PWM_FREQUENCY 25000 // 25khz
+#define MOTOR_PWM_FREQUENCY_MAX 50000 // 50khz
 
 
 // Angle Tracking

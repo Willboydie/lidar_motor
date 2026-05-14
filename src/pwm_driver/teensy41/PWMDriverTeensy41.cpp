@@ -10,7 +10,7 @@
 
 
 // function setting the pwm duty cycle to the hardware
-void PWMDriverTeensy41::writeCenterAligned3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params){
+void PWMDriverTeensy41::write3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params){
   Teensy41DriverParams* p = (Teensy41DriverParams*)params;
   write_pwm_on_pin (p->flextimers[0], p->submodules[0], p->channels[0], duty_cycleA);
   write_pwm_on_pin (p->flextimers[1], p->submodules[1], p->channels[1], duty_cycleB);
@@ -57,10 +57,10 @@ void PWMDriverTeensy41::write_pwm_on_pin(IMXRT_FLEXPWM_t *p, unsigned int submod
 // - BLDC motor - 3PWM setting
 // - hardware speciffic
 // in generic case dont do anything
-void* PWMDriverTeensy41::configureCenterAligned3PWM(long pwm_frequency,const int pinA, const int pinB, const int pinC) {
+void* PWMDriverTeensy41::configure3PWM(long pwm_frequency,const int pinA, const int pinB, const int pinC) {
 
-  if ( !pwm_frequency || !_isset(pwm_frequency) ) pwm_frequency = PWM_FREQUENCY; // default frequency 25khz
-  else pwm_frequency = _constrain(pwm_frequency, 0, PWM_FREQUENCY_MAX); // constrain to 50kHz max
+  if ( !pwm_frequency || !_isset(pwm_frequency) ) pwm_frequency = MOTOR_PWM_FREQUENCY; // default frequency 25khz
+  else pwm_frequency = _constrain(pwm_frequency, 0, MOTOR_PWM_FREQUENCY_MAX); // constrain to 50kHz max
 
   IMXRT_FLEXPWM_t *flexpwmA,*flexpwmB,*flexpwmC;
   int submoduleA,submoduleB,submoduleC;

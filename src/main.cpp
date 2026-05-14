@@ -15,7 +15,7 @@
 #include "motor/GM2804.hpp"
 #include "foc_controller/FOCController.hpp"
 #include "sensor/AS5048.hpp"
-#include "pwm_driver/PWMDriverTeensy41.hpp"
+#include "pwm_driver/teensy41/PWMDriverTeensy41.hpp"
 #include "utils/tweakable_params.h"
 #include "utils/constants.h"
 #include "ldm/GarminV3HP.hpp"
