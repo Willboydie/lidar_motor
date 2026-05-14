@@ -33,12 +33,11 @@ protected:
     // unsigned long trigger_timestamp;
 
     int MODE_PIN;
+    int SCL;
+    int SDA;
     bool enabled = false;
 
 private:
     virtual void requestDistance() = 0;
     virtual void readLatestDistance() = 0;
-
-    int SCL;
-    int SDA; 
 };

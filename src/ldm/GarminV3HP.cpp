@@ -3,9 +3,14 @@
 GarminV3HP::GarminV3HP(int _scl, int _sda, int _mode_pin) : LDM(_scl, _sda, _mode_pin) {}
 
 void GarminV3HP::init() {
+    // Route the I2C peripheral to the SCL/SDA pins passed to the constructor.
+    // On stm32duino these must be set before Wire.begin(); on Teensy the calls
+    // are a no-op when the pins already match the default Wire instance.
+    Wire.setSDA(SDA);
+    Wire.setSCL(SCL);
     Wire.begin();
     Wire.setClock(I2C_CLOCK_SPEED);
-    
+
     // Configure MODE pin as input for interrupt
     pinMode(MODE_PIN, INPUT);
     
@@ -139,47 +144,20 @@ void GarminV3HP::write(uint8_t reg, uint8_t* data_bytes, uint8_t length) {
 
 
 void GarminV3HP::read(uint8_t reg,  uint8_t * data_bytes, uint8_t length) {
-
-#ifdef LEGACY_I2C
-
-    #define SEND_STOP ((uint8_t) true)
-    #define DONT_STOP ((uint8_t) false)
-
+    // Portable two-step read (write register address with repeated start, then
+    // read length bytes). The Teensy-only 8-arg Wire.requestFrom overload is
+    // not available on stm32duino, so we always go via this standard path.
     Wire.beginTransmission(address);
     Wire.write(reg);
-
-    // A nack means the device is not responding, report the error over serial
-    if (Wire.endTransmission(DONT_STOP)) // performs repeated start
-    {
+    if (Wire.endTransmission(false)) {  // repeated start
         Serial.println("> nack");
     }
+    Wire.requestFrom(address, length, (uint8_t)true);
 
-// Perform read, save in dataBytes array
-    Wire.requestFrom(address, length, true);
-
-#else
-
-// This single function performs the following actions -
-//     1) I2C START
-//     2) I2C write to set the address
-//     3) I2C REPEATED START
-//     4) I2C read to fetch the required data
-//     5) I2C STOP
-
-    Wire.requestFrom
-    (
-        address, // Slave address
-        length,         // number of consecutive bytes to read
-        reg,          // address of first register to read
-        1,                // number of bytes in regAddr
-        true              // true = set STOP condition following I2C read
-    );
-
-#endif
-    uint8_t numHere = Wire.available(); 
-    uint8_t i = 0; 
-    while (i < numHere) { 
-        data_bytes[i] = Wire.read(); i++; 
+    uint8_t numHere = Wire.available();
+    uint8_t i = 0;
+    while (i < numHere) {
+        data_bytes[i] = Wire.read(); i++;
     }
 
     delayMicroseconds(DEFAULT_DELAY);

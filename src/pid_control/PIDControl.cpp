@@ -19,6 +19,9 @@ float PIDControl::operator() (float error){
     // calculate the time from the last call
     unsigned long timestamp_now = micros();
     float Ts = (timestamp_now - timestamp_prev) * 1e-6f;
+    // Two callers in the same micros() tick would give Ts == 0 and blow up
+    // the derivative term. Clamp to 1 µs.
+    if (Ts < 1e-6f) Ts = 1e-6f;
     // u(s) = (P + I/s + Ds)e(s)
     // Discrete implementations
     // proportional part

@@ -65,9 +65,9 @@ uint16_t AS5048::nop() {
 uint16_t AS5048::spi_write(uint16_t command) {
     //Send the command
     spi->beginTransaction(spi_settings);
-    digitalWriteFast(cs_pin, LOW);
+    digitalWrite(cs_pin, LOW);
     uint16_t data = spi->transfer16(command);
-    digitalWriteFast(cs_pin,HIGH);
+    digitalWrite(cs_pin, HIGH);
     spi->endTransaction();
     // error_flag = data & AS5048A_ERRFLG;
     return data;
