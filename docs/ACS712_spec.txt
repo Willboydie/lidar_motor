@@ -1,0 +1,41 @@
+ACS712ELCTR-05B-T – ±5 A Variant Key Specs
+Current sensing:
+
+Optimized accuracy range: –5 A to +5 A (bidirectional)
+Sensitivity: 180 / 185 / 190 mV/A (min/typ/max at Ta = 25 °C)
+Quiescent output voltage (Ip = 0 A): Vcc × 0.5 = 2.5 V at 5 V supply
+Output swing: ≈ 2.5 V ± 0.925 V at ±5 A (so roughly 1.575 V to 3.425 V full-scale)
+
+Accuracy:
+
+Total output error: ±1.5 % of Ip at ±5 A, Ta = 25 °C (i.e. ≈ ±75 mA error at full scale)
+Nonlinearity: ≤1.5 % (typically <0.6 % over temperature)
+Symmetry: 98–102 %
+
+Noise & resolution:
+
+Output noise (peak-to-peak): 21 mV typ — with CF = 47 nF, 2 kHz BW
+Translated to current: 21 mV ÷ 185 mV/A ≈ 114 mA p-p noise floor under those filter conditions
+With less filtering (full 80 kHz BW, CF = 1 nF), noise will be substantially higher
+
+Temperature drift (185 mV/A version):
+
+Zero-current output drift: –0.26 mV/°C from –40 to 25 °C; –0.08 mV/°C from 25 to 150 °C
+Sensitivity drift: +0.054 mV/A/°C from –40 to 25 °C; –0.008 mV/A/°C from 25 to 150 °C
+
+Common to all ACS712 variants (recap for context):
+
+Supply: 5 V (4.5–5.5 V), ≈ 10 mA
+Bandwidth: 80 kHz (–3 dB), set via CF on the FILTER pin
+Rise time: 5 µs with CF = 1 nF
+Primary conductor resistance: 1.2 mΩ
+Isolation: 2.1 kVRMS reinforced
+Overcurrent transient tolerance: 100 A for 100 ms
+Package: SOIC-8 (LC); operating Ta: –40 to +85 °C
+
+Practical use notes for the 05B:
+
+Highest sensitivity of the three variants → best signal-to-noise of the family, but lowest current ceiling
+At 5 V supply, ratiometric output means scaling factor on an STM32 ADC: I [A] = (V_adc – 2.5) / 0.185
+The 1.5 % full-scale error at 5 A is roughly ±75 mA absolute, which dominates over noise — so don't expect milliamp-level resolution even with heavy filtering
+For low-current FOC on a gimbal motor (sub-amp phase currents), this variant's resolution and 80 kHz BW are still marginal versus a shunt + dedicated CSA, but it's usable for bus-current monitoring or coarse current limiting on a ≤5 A rail

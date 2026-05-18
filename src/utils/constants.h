@@ -2,6 +2,33 @@
 #define CONSTANTS_H
 
 // Pins
+#if defined(STM32G4xx)
+// motor 1
+#define N1_X PA7  // D11
+#define N2_X PC7 // D9
+#define N3_X PB3 // D3
+#define EN_X PA8 // D8
+#define SENSOR_SPI_CS_X PB2 // white
+// motor 2
+#define N1_Y PA5  // D13
+#define N2_Y PB6 // D10
+#define N3_Y PB4 // D5
+#define EN_Y PA9 // D8
+#define SENSOR_SPI_CS_Y PB1 // white
+// // miso = PB14 (yellow), mosi = PB15 (black), sck = PB13 (red)
+
+// Garmin Pins
+#define GARMIN_SCL PB8 // green
+#define GARMIN_SDA PB9 // blue
+#define GARMIN_MODE_PIN PC9  // MODE/STATUS pin for interrupt-driven readings (yellow)
+
+#define ADC_CS_X_1 PA0 // A0
+#define ADC_CS_X_2 PA4 // A2
+#define ADC_CS_Y_1 PA1 // A1
+#define ADC_CS_Y_2 PB0 // A3
+
+#elif defined(TEENSY41)
+
 // motor 1
 #define N1_1 6  // orange
 #define N2_1 36 // yellow
@@ -21,6 +48,7 @@
 #define GARMIN_SDA 18 // blue
 #define GARMIN_MODE_PIN 20  // MODE/STATUS pin for interrupt-driven readings (yellow)
 
+#endif
 
 // Motor
 #define MOTOR_VOLTAGE_LIMIT 12.0f

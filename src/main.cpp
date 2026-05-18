@@ -24,10 +24,10 @@
 
 GarminV3HP ldm = GarminV3HP(GARMIN_SCL, GARMIN_SDA, GARMIN_MODE_PIN);
 StateMachine stateMachine;
-AS5048 sensor1 = AS5048(SENSOR_SPI_CS_1);
-AS5048 sensor2 = AS5048(SENSOR_SPI_CS_2);
-PWMDriverTeensy41 pwmDriver1 = PWMDriverTeensy41(N1_1, N2_1, N3_1, EN_1);
-PWMDriverTeensy41 pwmDriver2 = PWMDriverTeensy41(N1_2, N2_2, N3_2, EN_2);
+AS5048 sensor1 = AS5048(SENSOR_SPI_CS_X);
+AS5048 sensor2 = AS5048(SENSOR_SPI_CS_Y);
+PWMDriverTeensy41 pwmDriver1 = PWMDriverTeensy41(N1_X, N2_X, N3_X, EN_X);
+PWMDriverTeensy41 pwmDriver2 = PWMDriverTeensy41(N1_Y, N2_Y, N3_Y, EN_Y);
 GM2804 motor1(1, SENSOR_OFFSET_1);
 GM2804 motor2(2, SENSOR_OFFSET_2);
 FOCController focController1(sensor1, pwmDriver1, motor1);
