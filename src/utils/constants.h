@@ -15,7 +15,10 @@
 #define N3_Y PB4 // D5
 #define EN_Y PA9 // D8
 #define SENSOR_SPI_CS_Y PB1 // white
-// // miso = PB14 (yellow), mosi = PB15 (black), sck = PB13 (red)
+// SPI (SimpleFOC shield): MISO=PB14, MOSI=PB15, SCK=PB13
+#define SENSOR_SPI_MISO PB14
+#define SENSOR_SPI_MOSI PB15
+#define SENSOR_SPI_SCK PB13
 
 // Garmin Pins
 #define GARMIN_SCL PB8 // green
@@ -41,7 +44,7 @@
 #define N3_2 9 // green
 #define EN_2 23 // blue
 #define SENSOR_SPI_CS_2 15 // white
-// // miso = 12 (yellow), mosi = 11 (black), sck = 13 (red)
+// SPI: MISO=12, MOSI=11, SCK=13 (Arduino default SPI bus)
 
 // Garmin Pins
 #define GARMIN_SCL 19 // green

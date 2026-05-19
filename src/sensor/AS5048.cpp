@@ -16,6 +16,11 @@ bool AS5048::init(SPIClass* _spi) {
     spi_settings = SPISettings(SPI_CLOCK_SPEED, MSBFIRST, SPI_MODE);
     pinMode(cs_pin, OUTPUT);
     digitalWrite(cs_pin, HIGH);
+#if defined(STM32G4xx)
+    spi->setMISO(SENSOR_SPI_MISO);
+    spi->setMOSI(SENSOR_SPI_MOSI);
+    spi->setSCLK(SENSOR_SPI_SCK);
+#endif
     spi->begin();
     initialised = true;
     return true;

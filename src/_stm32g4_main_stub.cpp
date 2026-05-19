@@ -2,10 +2,10 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-#include "tests/system/stm32g4_heartbeat_test.hpp"
+#include "tests/sensor/stm32g4_sensor_test.hpp"
 
 void setup() {
-  stm32g4_heartbeat_test();
+  stm32g4_sensor_test();
 }
 
 void loop() {}

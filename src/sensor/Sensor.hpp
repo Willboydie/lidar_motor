@@ -21,11 +21,9 @@ public:
     bool update();
     virtual void updateDiagnostics() = 0;
 
-    float getLatestRotorAngle() { return rotor_angle; }
+    float getLatestRotorAngle() { return raw_sensor_angle; }
     float getRawAngularVelocity() { return raw_angular_velocity; }
     float getFilteredAngularVelocity() { return filtered_angular_velocity; }
-    float getRawAngle() { return static_cast<float>(raw_sensor_angle); }
-    float getCumulatedRotations() { return cumulated_rotations; }
 
     static constexpr uint32_t DEBUG_N = 100;
     const float* getDebugData() const { return debug_data; }
@@ -48,14 +46,9 @@ private:
 
     float raw_sensor_angle = 0.0f;
     float previous_raw_angle = 0.0f;
-    float cumulated_rotations = 0.0f;
-    float previous_rotor_angle = 0.0f;
-    float rotor_angle = 0.0f;
     float raw_angular_velocity = 0.0f;
     float filtered_angular_velocity = 0.0f;
     uint32_t t0 = 0;
-
-    bool not_first_measurement = false;
 
     float debug_data[DEBUG_N * 5] = {};
     uint32_t debug_idx = 0;
