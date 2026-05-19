@@ -38,7 +38,7 @@ Revised design report for porting this project from Teensy 4.1 to **STM32G4 Nucl
 | `InlineCurrentSenseSTM32G4`                       | ADC init, offset calibration, **Volts→Amps** at the pin (including divider), `getPhaseCurrents()`, optional DQ helper.                                                        |
 
 
-`FOCController` today uses `**estimate_Vq()`** (resistor + Kv model), not ADC current. New sense class feeds `**Iq` / `Id**` once you extend `loop()`.
+`FOCController` today uses `**estimate_Vq()`** (resistor + Kv model), not ADC current. New sense class feeds `**Iq` / `Id`** once you extend `loop()`.
 
 ---
 
@@ -68,8 +68,8 @@ From `stm32_mcu.cpp` / `stm32_mcu.h`:
 Implementation sketch:
 
 - `**configure3PWM`**: return `_configure3PWM(pwm_frequency, pinA, pinB, pinC)` (or a thin wrapper that registers the motor in `motorsUsed` exactly once and maps `SIMPLEFOC_DRIVER_INIT_FAILED` to `nullptr` if you need `void*` from `PWMDriver`).
-- `**write3PWM**`: call `_writeDutyCycle3PWM(dutyA, dutyB, dutyC, params)`.
-- `**stopPwmHardware` / `cleanupParams**`: stop counters, disable channels, `delete` / free policy consistent with `STM32DriverParams` allocation in `_configure3PWM` (today `**new STM32DriverParams**` and HAL handles managed globally in `timersUsed`; review for leaks when **deinit** runs—may need mirrored cleanup from SimpleFOC’s `stop` path or a small patch so Teensy-like lifecycle holds).
+- `**write3PWM`**: call `_writeDutyCycle3PWM(dutyA, dutyB, dutyC, params)`.
+- `**stopPwmHardware` / `cleanupParams`**: stop counters, disable channels, `delete` / free policy consistent with `STM32DriverParams` allocation in `_configure3PWM` (today `**new STM32DriverParams**` and HAL handles managed globally in `timersUsed`; review for leaks when **deinit** runs—may need mirrored cleanup from SimpleFOC’s `stop` path or a small patch so Teensy-like lifecycle holds).
 
 This keeps **one** implementation of timer scoring (`stm32_searchtimers.cpp`) and alignment (`stm32_alignTimers` in `stm32_timerutils.cpp`).
 
@@ -79,7 +79,7 @@ This keeps **one** implementation of timer scoring (`stm32_searchtimers.cpp`) an
 
 ### 4.1 Why “different timers per motor” is expected
 
-For motor X, fixed pins are `**PA7`, `PC7`, `PB3`**; for motor Y, `**PA5`, `PB6`, `PB4**`. On STM32G4, each pin selects a **timer instance + channel** via alternate function. A single advanced timer with three independent channels on those exact pins is **unlikely**; the practical outcome is **three timer peripherals per motor** (order and instance IDs come from **stm32duino `PinMap_TIM`**, not from this repo).
+For motor X, fixed pins are `**PA7`, `PC7`, `PB3`**; for motor Y, `**PA5`, `PB6`, `PB4`**. On STM32G4, each pin selects a **timer instance + channel** via alternate function. A single advanced timer with three independent channels on those exact pins is **unlikely**; the practical outcome is **three timer peripherals per motor** (order and instance IDs come from **stm32duino `PinMap_TIM`**, not from this repo).
 
 `_configure3PWM()` already:
 
@@ -98,7 +98,7 @@ For STM32G4, the utility selects a **master** instance (when possible) that can 
 
 ### 4.3 Dual-motor allocation risk
 
-`stm32_alignTimers` compares new timers against `**motorsUsed`**. **Overlapping `TIM_TypeDef*` between motors** can be flagged or lead to subtle bugs. **Before PCB sign-off**, run a static check (script or spreadsheet) listing `**PinMap_TIM` resolutions for all six pins** and assert **six distinct timer instances** (or document intentional sharing and change policy).
+`stm32_alignTimers` compares new timers against `**motorsUsed`**. Overlapping `TIM_TypeDef*` between motors can be flagged or lead to subtle bugs. Before PCB sign-off, run a static check (script or spreadsheet) listing `**PinMap_TIM` resolutions for all six pins** and assert **six distinct timer instances** (or document intentional sharing and change policy).
 
 ---
 
@@ -114,11 +114,9 @@ Per `docs/ACS712_spec.txt` (±5 A “05B” typical):
 
 Firmware must use:
 
-
 I = \frac{V_{\mathrm{ADCpin}} - V_{\mathrm{offset}}}{(\mathrm{mV/A}) \times 10^{-3}} \times \text{(if voltage divider: divide by gain)}
 
-
-`**offset`** from `**calibrateOffsets()**` at zero current matches **the pin**, not the raw ACS712 pin pre-divider.
+`**offset`** from `**calibrateOffsets()`** at zero current matches **the pin**, not the raw ACS712 pin pre-divider.
 
 ### 5.2 Two sensors per motor → three phase currents
 
@@ -145,7 +143,7 @@ If wiring swaps polarity, use **sign flips** (`gain_a = -gain_a`) or swap pin de
 
 ### 5.4 API surface for `FOCController`
 
-SimpleFOC names `**getPhaseCurrents()`** as the primitive; `**getFOCCurrents(float angle_el)**` applies Clarke/Park (`CurrentSense.cpp` in tree).
+SimpleFOC names `**getPhaseCurrents()`** as the primitive; `**getFOCCurrents(float angle_el)`** applies Clarke/Park (`CurrentSense.cpp` in tree).
 
 Suggested API for your class:
 
@@ -157,7 +155,7 @@ Suggested API for your class:
 
 ## 6. Integrating current into `FOCController::loop()`
 
-Current flow (`FOCController.cpp`): sensor → angles → PIDs → `target_q_current` → `**Vq = estimate_Vq()**` → LPF → `setPhaseVoltage()`.
+Current flow (`FOCController.cpp`): sensor → angles → PIDs → `target_q_current` → `**Vq = estimate_Vq()`** → LPF → `setPhaseVoltage()`.
 
 **Staged integration:**
 
@@ -195,7 +193,7 @@ This avoids destabilizing the gimbal while verifying offsets and sign.
 
 ## 9. Minor `constants.h` note
 
-Under `STM32G4xx`, `**EN_Y`** is commented `// D8` while `**EN_X**` is also `D8` in the comment block—likely silkscreen copy-paste; **GPIO macros `PA8` / `PA9` are the meaningful definitions**.
+Under `STM32G4xx`, `**EN_Y`** is commented `// D8` while `**EN_X`** is also `D8` in the comment block—likely silkscreen copy-paste; **GPIO macros `PA8` / `PA9` are the meaningful definitions**.
 
 ---
 

@@ -7,7 +7,7 @@
 #define N1_X PA7  // D11
 #define N2_X PC7 // D9
 #define N3_X PB3 // D3
-#define EN_X PA8 // D8
+#define EN_X PA8 // D7
 #define SENSOR_SPI_CS_X PB2 // white
 // motor 2
 #define N1_Y PA5  // D13
@@ -27,7 +27,7 @@
 #define ADC_CS_Y_1 PA1 // A1
 #define ADC_CS_Y_2 PB0 // A3
 
-#elif defined(TEENSY41)
+#elif defined(ARDUINO_TEENSY41)
 
 // motor 1
 #define N1_1 6  // orange
@@ -47,6 +47,18 @@
 #define GARMIN_SCL 19 // green
 #define GARMIN_SDA 18 // blue
 #define GARMIN_MODE_PIN 20  // MODE/STATUS pin for interrupt-driven readings (yellow)
+
+// Shared names used by main.cpp (same motor indices as STM32G4xx block)
+#define N1_X N1_1
+#define N2_X N2_1
+#define N3_X N3_1
+#define EN_X EN_1
+#define N1_Y N1_2
+#define N2_Y N2_2
+#define N3_Y N3_2
+#define EN_Y EN_2
+#define SENSOR_SPI_CS_X SENSOR_SPI_CS_1
+#define SENSOR_SPI_CS_Y SENSOR_SPI_CS_2
 
 #endif
 
