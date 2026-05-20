@@ -597,6 +597,26 @@ TIM_HandleTypeDef* stm32_alignTimers(TIM_HandleTypeDef *timers_in[], uint8_t num
 }
 
 
+// After stm32_alignTimers: switch master TRGO from ENABLE (slave sync) to UPDATE (ADC).
+// Centre-aligned PWM fires update twice per period; RCR=1 on TIM1/TIM8 halves that to once.
+void stm32_configureMasterTrgoForAdc(TIM_HandleTypeDef* master) {
+  if (master == NULL) return;
+
+  LL_TIM_SetTriggerOutput(master->Instance, LL_TIM_TRGO_UPDATE);
+
+#if defined(TIM_RCR_REP)
+  if (IS_TIM_REPETITION_COUNTER_INSTANCE(master->Instance)) {
+    LL_TIM_SetRepetitionCounter(master->Instance, 1);
+    master->Instance->EGR = TIM_EGR_UG;
+  }
+#endif
+
+#if defined(SIMPLEFOC_STM32_DEBUG) && !defined(SIMPLEFOC_DISABLE_DEBUG)
+  SIMPLEFOC_DEBUG("STM32-DRV: master TRGO=UPDATE, RCR=", (int)master->Instance->RCR);
+#endif
+}
+
+
 
 
 

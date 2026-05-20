@@ -496,6 +496,10 @@ void* _configure3PWM(long pwm_frequency,const int pinA, const int pinB, const in
     .master_timer = NULL
   };
   params->master_timer = stm32_alignTimers(timers, 3);
+  {
+    TIM_HandleTypeDef* trgo_source = params->master_timer != NULL ? params->master_timer : timers[0];
+    stm32_configureMasterTrgoForAdc(trgo_source);
+  }
   motorsUsed[numMotorsUsed++] = params;
   return params;
 }
