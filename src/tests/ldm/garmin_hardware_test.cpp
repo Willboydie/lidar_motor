@@ -84,6 +84,10 @@ void garmin_hardware_test() {
     Serial.begin(115200);
 
     // Initialize Arduino I2C (for communication to LidarLite)
+#if defined(STM32G4xx)
+    Wire.setSCL(GARMIN_SCL);
+    Wire.setSDA(GARMIN_SDA);
+#endif
     Wire.begin();
     #ifdef FAST_I2C
         #if ARDUINO >= 157

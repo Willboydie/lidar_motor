@@ -2,10 +2,10 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-#include "tests/sensor/stm32g4_sensor_test.hpp"
+#include "tests/ldm/stm32g4_ldm_test.hpp"
 
 void setup() {
-  stm32g4_sensor_test();
+  stm32g4_ldm_test();
 }
 
 void loop() {}

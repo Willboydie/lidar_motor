@@ -20,10 +20,10 @@
 #define SENSOR_SPI_MOSI PB15
 #define SENSOR_SPI_SCK PB13
 
-// Garmin Pins
+// Garmin Pins (I2C1 default on Nucleo G474RE: SCL=D15/PB8, SDA=D14/PB9)
 #define GARMIN_SCL PB8 // green
 #define GARMIN_SDA PB9 // blue
-#define GARMIN_MODE_PIN PC9  // MODE/STATUS pin for interrupt-driven readings (yellow)
+#define GARMIN_MODE_PIN PC9  // MODE/STATUS, EXTI-capable (yellow)
 
 #define ADC_CS_X_1 PA0 // A0
 #define ADC_CS_X_2 PA4 // A2
