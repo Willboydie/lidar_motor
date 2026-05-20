@@ -2,10 +2,10 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-#include "tests/ldm/stm32g4_ldm_test.hpp"
+#include "tests/driver/stm32g4_driver_test.hpp"
 
 void setup() {
-  stm32g4_ldm_test();
+  stm32g4_driver_test();
 }
 
 void loop() {}
