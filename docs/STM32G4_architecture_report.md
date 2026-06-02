@@ -114,7 +114,9 @@ Per `docs/ACS712_spec.txt` (±5 A “05B” typical):
 
 Firmware must use:
 
+$$
 I = \frac{V_{\mathrm{ADCpin}} - V_{\mathrm{offset}}}{(\mathrm{mV/A}) \times 10^{-3}} \times \text{(if voltage divider: divide by gain)}
+$$
 
 `**offset`** from `**calibrateOffsets()`** at zero current matches **the pin**, not the raw ACS712 pin pre-divider.
 

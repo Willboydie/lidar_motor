@@ -519,25 +519,25 @@ TIM_HandleTypeDef* stm32_alignTimers(TIM_HandleTypeDef *timers_in[], uint8_t num
   // see if there is more then 1 timers used for the pwm
   // if yes, try to align timers
   if(numTimers > 1){
-    // find the master timer
+    // find the master timer (prefer TIM1, then TIM8 — RCR + ADC TRGO path)
     int16_t master_index = -1;
     int triggerEvent = -1;
-    for (int i=0; i<numTimers; i++) {
-      // check if timer can be master
-      if(IS_TIM_MASTER_INSTANCE(timers[i]->Instance)) {
-        // check if timer already configured in TRGO update mode (used for ADC triggering)
-        // in that case we should not change its TRGO configuration
-        if(timers[i]->Instance->CR2 & LL_TIM_TRGO_UPDATE) continue;
-        // check if the timer has the supported internal trigger for other timers
-        for (int slave_i=0; slave_i<numTimers; slave_i++) {
-          if (i==slave_i) continue; // skip self
-          // check if it has the supported internal trigger
-          triggerEvent = stm32_getInternalSourceTrigger(timers[i],timers[slave_i]); 
-          if(triggerEvent == -1) break; // not supported keep searching
+    const TIM_TypeDef* preferred_masters[] = { TIM1, TIM8 };
+    for (int pass = 0; pass < 2 && master_index == -1; pass++) {
+      for (int i = 0; i < numTimers; i++) {
+        if (pass == 0 && preferred_masters[0] != NULL && timers[i]->Instance != preferred_masters[0]
+            && (preferred_masters[1] == NULL || timers[i]->Instance != preferred_masters[1]))
+          continue;
+        if (!IS_TIM_MASTER_INSTANCE(timers[i]->Instance)) continue;
+        if (timers[i]->Instance->CR2 & LL_TIM_TRGO_UPDATE) continue;
+        triggerEvent = -1;
+        for (int slave_i = 0; slave_i < numTimers; slave_i++) {
+          if (i == slave_i) continue;
+          triggerEvent = stm32_getInternalSourceTrigger(timers[i], timers[slave_i]);
+          if (triggerEvent == -1) break;
         }
-        if(triggerEvent == -1) continue; // cannot be master, keep searching
-        // otherwise the master has been found, remember the index
-        master_index = i; // found the master timer
+        if (triggerEvent == -1) continue;
+        master_index = i;
         break;
       }
     }
@@ -613,6 +613,47 @@ void stm32_configureMasterTrgoForAdc(TIM_HandleTypeDef* master) {
 
 #if defined(SIMPLEFOC_STM32_DEBUG) && !defined(SIMPLEFOC_DISABLE_DEBUG)
   SIMPLEFOC_DEBUG("STM32-DRV: master TRGO=UPDATE, RCR=", (int)master->Instance->RCR);
+#endif
+}
+
+
+// Phase-align several independent (non-slaved) timers so their counters — and
+// therefore their centre-aligned PWM edges and UPDATE/TRGO events — run in
+// lockstep. Each motor's master is its own master here (TIM1 for X, TIM8 for Y),
+// so there is no hardware master/slave chain to align them; sequential start
+// during init leaves them skewed by microseconds. All timers must share the
+// same clock, prescaler and ARR. We stop them, zero the counters and force an
+// update (UG) so the prescaler and repetition counters reload identically, then
+// re-enable them back-to-back with interrupts masked. Residual skew is a couple
+// of CPU cycles; since they share one clock and ARR they stay locked with no drift.
+void stm32_syncTimers(TIM_HandleTypeDef* timers_in[], uint8_t num_timers_in) {
+  TIM_HandleTypeDef* timers[6];
+  uint8_t n = stm32_distinctTimers(timers_in, num_timers_in, timers);
+  if (n == 0) return;
+
+  for (uint8_t i = 0; i < n; i++)
+    LL_TIM_DisableCounter(timers[i]->Instance);
+
+  // zero the counters and reload PSC/ARR/RCR so update phase matches across timers
+  for (uint8_t i = 0; i < n; i++) {
+    timers[i]->Instance->CNT = 0;
+    timers[i]->Instance->EGR = TIM_EGR_UG;
+  }
+
+  // drop the pending update flag the UG just raised, so the first real UPDATE
+  // (and its TRGO) after the synchronised start lines up across all timers
+  for (uint8_t i = 0; i < n; i++)
+    __HAL_TIM_CLEAR_FLAG(timers[i], TIM_FLAG_UPDATE);
+
+  // enable back-to-back with IRQs masked → near-zero inter-timer skew
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  for (uint8_t i = 0; i < n; i++)
+    LL_TIM_EnableCounter(timers[i]->Instance);
+  __set_PRIMASK(primask);
+
+#if defined(SIMPLEFOC_STM32_DEBUG) && !defined(SIMPLEFOC_DISABLE_DEBUG)
+  SIMPLEFOC_DEBUG("STM32-DRV: synchronised timers: ", (int)n);
 #endif
 }
 

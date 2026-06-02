@@ -1,6 +1,7 @@
 /// test imports
 // #include "tests/sensor/sensor_test.hpp"
 // #include "tests/sensor/finding_offset.hpp"
+// #include "tests/sensor/electrical_offset_test.hpp"
 // #include "tests/driver/driver_test.hpp"
 // #include "tests/scan_path/sine_path_test.hpp"
 // #include "tests/sensor/noise_test.hpp"
@@ -58,6 +59,7 @@ void setup() {
   // motor_test();
   // driver_test();
   // sensor_offset_test();
+  // electrical_offset_test();
   // pid_test();
   // ldm_test();
   // i2c_test();

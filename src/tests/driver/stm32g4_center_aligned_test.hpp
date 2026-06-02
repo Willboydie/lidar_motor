@@ -7,14 +7,14 @@
 #include "Arduino.h"
 
 // Stage 4 bench test: centre-aligned 3PWM + master TRGO on motor X (no coils).
-// Scope TRGO_PROBE_PIN (PA10 / D2) for one toggle per PWM period at count-zero.
+// Scope TRGO_PROBE_PIN (PC7 / D9) for one toggle per PWM period at count-zero.
 // Serial: l = 25% duty on phase A, h = 75%, o = default pattern, f = disable, e = re-enable.
 
 #if defined(STM32G4xx)
 
 namespace {
 
-constexpr uint32_t TRGO_PROBE_PIN = PA10;
+constexpr uint32_t TRGO_PROBE_PIN = PC7;
 
 TIM_HandleTypeDef* g_master_timer = NULL;
 volatile uint32_t g_trgo_toggle_count = 0;
@@ -84,7 +84,7 @@ inline void stm32g4_center_aligned_test() {
 
   driver.setPwm(3.0f, 1.5f, 0.0f);
   Serial.println("PWM ON: Va=3.0 V (25%), Vb=1.5 V, Vc=0.0 V");
-  Serial.println("Scope TRGO_PROBE on PA10 (D2). Commands:");
+  Serial.println("Scope TRGO_PROBE on PC7 (D9). Commands:");
   Serial.println("  l = 25% on A (3.0 V), h = 75% on A (9.0 V)");
   Serial.println("  o = default (3/1.5/0 V), f = disable, e = enable + default");
 

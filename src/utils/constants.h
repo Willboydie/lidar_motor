@@ -3,26 +3,27 @@
 
 // Pins
 #if defined(STM32G4xx)
-// motor 1
-#define N1_X PA7  // D11
-#define N2_X PC7 // D9
-#define N3_X PB3 // D3
-#define EN_X PA8 // D7
+// motor X — TIM1 3PWM (PA8–PA10); EN on PA7 (see docs/STM32G4_implementation_stages.md)
+#define N1_X PA8   // D7, TIM1_CH1 AF6
+#define N2_X PA9   // D8, TIM1_CH2 AF6
+#define N3_X PA10  // D2, TIM1_CH3 AF6
+#define EN_X PA7   // D11, GPIO
 #define SENSOR_SPI_CS_X PB2 // white
-// motor 2
-#define N1_Y PA5  // D13
-#define N2_Y PB6 // D10
-#define N3_Y PB4 // D5
-#define EN_Y PA9 // D8
+// motor Y — TIM8 3PWM (PC6/PC7/PB9); EN on PB10 (no overlap with motor X TIM1 pins)
+// NB: PB6 (TIM8_CH1 AF5) read stuck-high on the bench; PC6 (TIM8_CH1 AF4) used instead.
+#define N1_Y PC6   // D47 (CN10), TIM8_CH1 AF4
+#define N2_Y PC7   // D9, TIM8_CH2 AF4
+#define N3_Y PB9   // D14, TIM8_CH3 AF10
+#define EN_Y PB10  // D6, GPIO
 #define SENSOR_SPI_CS_Y PB1 // white
 // SPI (SimpleFOC shield): MISO=PB14, MOSI=PB15, SCK=PB13
 #define SENSOR_SPI_MISO PB14
 #define SENSOR_SPI_MOSI PB15
 #define SENSOR_SPI_SCK PB13
 
-// Garmin Pins (I2C1 default on Nucleo G474RE: SCL=D15/PB8, SDA=D14/PB9)
-#define GARMIN_SCL PB8 // green
-#define GARMIN_SDA PB9 // blue
+// Garmin (I2C1); SDA moved off PB9 — motor Y N3 uses D14/PB9
+#define GARMIN_SCL PB8 // green, D15
+#define GARMIN_SDA PB7 // blue, D21 (I2C1_SDA)
 #define GARMIN_MODE_PIN PC9  // MODE/STATUS, EXTI-capable (yellow)
 
 #define ADC_CS_X_1 PA0 // A0

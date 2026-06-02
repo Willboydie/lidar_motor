@@ -2,10 +2,10 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-#include "tests/driver/stm32g4_safe_stop_test.hpp"
+#include "tests/driver/stm32g4_center_aligned_dual_test.hpp"
 
 void setup() {
-  stm32g4_safe_stop_test();
+  stm32g4_center_aligned_dual_test();
 }
 
 void loop() {}

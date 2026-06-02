@@ -18,6 +18,7 @@ uint32_t stm32_getLLChannel(PinMap* timer);
 int stm32_getInternalSourceTrigger(TIM_HandleTypeDef* master, TIM_HandleTypeDef* slave);
 TIM_HandleTypeDef* stm32_alignTimers(TIM_HandleTypeDef *timers_in[], uint8_t num_timers_in);
 void stm32_configureMasterTrgoForAdc(TIM_HandleTypeDef* master);
+void stm32_syncTimers(TIM_HandleTypeDef* timers_in[], uint8_t num_timers_in);
 void stm32_setPwm(TIM_HandleTypeDef *timer, uint32_t channel, uint32_t value);
 uint32_t stm32_getTimerClockFreq(TIM_HandleTypeDef* handle);
 
