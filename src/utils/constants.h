@@ -73,8 +73,10 @@
 #define SENSOR_DIRECTION 1 // CCW = 1, CW = -1. GM2804 with AS5048A is CCW.
 
 // Sensor
-#define SENSOR_OFFSET_1  5.67f // electrical offset in radians
-#define SENSOR_OFFSET_2 4.02f
+// MOTOR X electrical offset: 1.4248 rad  (-> constants.h SENSOR_OFFSET_1)
+// MOTOR Y electrical offset: 6.1623 rad  (-> constants.h SENSOR_OFFSET_2)
+#define SENSOR_OFFSET_1  1.4248f // electrical offset in radians
+#define SENSOR_OFFSET_2 6.1623f
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 

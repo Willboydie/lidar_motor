@@ -2,10 +2,10 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-#include "tests/driver/stm32g4_center_aligned_dual_test.hpp"
+#include "tests/sensor/electrical_offset_test.hpp"
 
 void setup() {
-  stm32g4_center_aligned_dual_test();
+  electrical_offset_test();
 }
 
 void loop() {}
