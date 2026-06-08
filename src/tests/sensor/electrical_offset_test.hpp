@@ -231,8 +231,8 @@ inline void electrical_offset_test() {
     PWMDriverTeensy41 driverX(N1_X, N2_X, N3_X, EN_X);
     PWMDriverTeensy41 driverY(N1_Y, N2_Y, N3_Y, EN_Y);
 #endif
-    GM2804 motorX(1, SENSOR_OFFSET_1);
-    GM2804 motorY(2, SENSOR_OFFSET_2);
+    GM2804 motorX(1, SENSOR_OFFSET_X);
+    GM2804 motorY(2, SENSOR_OFFSET_Y);
 
     if (!sensorX.init() || !sensorY.init()) {
         Serial.println("Sensor init failed.");

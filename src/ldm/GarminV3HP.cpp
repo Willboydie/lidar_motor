@@ -16,6 +16,7 @@ void GarminV3HP::init() {
     
     config_number = 0; // Default mode, balanced performance
     configure();
+    markInitialised();
     enable();
     resetReferenceFilter();
     disable();

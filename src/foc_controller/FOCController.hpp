@@ -55,6 +55,10 @@ public:
     void setFOCVoltageLPFTau(float _foc_voltage_lpf_tau) { LPF_voltage.setTau(_foc_voltage_lpf_tau); }
     void setVelocityFeedForward(float gain) { K_vff = gain; }
 
+    void setVq(float _Vq) { Vq = _Vq; }
+    void setVd(float _Vd) { Vd = _Vd; }
+    void setElectricalAngle(float _electrical_angle) { electrical_angle = _electrical_angle; }
+
     // Angle Tracking
     void resetAngleTracking() { angle_tracking_count = 0; }
     float angle_tracking[ANGLE_TRACKING_LIMIT];
@@ -64,12 +68,13 @@ public:
 
     // void setPhaseVoltage(float _Vq, float _Vd, float _angle_el) { Vq = _Vq; Vd = _Vd; electrical_angle = _angle_el; setPhaseVoltage(); }
     const int motor_number;
+    void setPhaseVoltage();
 
 private:
     Sensor& sensor;
     PWMDriver& pwm_driver;
 
-    void setPhaseVoltage();
+    // void setPhaseVoltage();
     float calculate_electrical_angle();
 
     float calibrateLoopPeriod(uint16_t num_samples);

@@ -14,6 +14,10 @@ LDM::LDM(int _scl, int _sda, int _mode_pin) : SCL(_scl), SDA(_sda), MODE_PIN(_mo
 
 void LDM::enable() {
     if (enabled) return;
+    if (!initialised) {
+        Serial.println("Can't enable LDM - not initialised");
+        return;
+    }
     enabled = true;
     ldmInstance = this;
     attachInterrupt(digitalPinToInterrupt(MODE_PIN), ldmISR, RISING);

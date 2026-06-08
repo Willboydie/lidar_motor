@@ -73,10 +73,13 @@
 #define SENSOR_DIRECTION 1 // CCW = 1, CW = -1. GM2804 with AS5048A is CCW.
 
 // Sensor
-// MOTOR X electrical offset: 1.4248 rad  (-> constants.h SENSOR_OFFSET_1)
-// MOTOR Y electrical offset: 6.1623 rad  (-> constants.h SENSOR_OFFSET_2)
-#define SENSOR_OFFSET_1  1.4248f // electrical offset in radians
-#define SENSOR_OFFSET_2 6.1623f
+// MOTOR X electrical offset: 4.0852 rad  (-> constants.h SENSOR_OFFSET_X)
+// MOTOR Y electrical offset: 2.5624 rad  (-> constants.h SENSOR_OFFSET_Y)
+// Measured by stiction-bracket autocal (harmonic-robust circular mean over a
+// full mech rev). Replaces stale values (1.4240 / 6.1619) that were ~2.66 rad
+// off and caused the estimated field to disagree with the true field.
+#define SENSOR_OFFSET_X  4.0852f // electrical offset in radians
+#define SENSOR_OFFSET_Y 2.5624f
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 
@@ -85,7 +88,6 @@
 #define ALIGNMENT_VOLTAGE 3.0f // V
 #define WORLD_OFFSET_X 5.28f
 #define WORLD_OFFSET_Y 2.11f
-
 
 // PWM Driver
 // NB: stm32duino's pins_arduino.h defines PWM_FREQUENCY=1000 (default for
@@ -98,14 +100,11 @@
 #define ANGLE_TRACKING_LIMIT 5000
 #define ANGLE_TRACKING_WINDOW_SIZE 100
 
-
 // Scan Path
 #define SCAN_PATH_UPDATE_PERIOD_US 2000 // 2ms / 500Hz
 
-
 // Serial Parameters
 #define BAUD_RATE 460800
-
 
 // EXACT VALUES
 #define _2_SQRT3 1.15470053838f
@@ -123,6 +122,5 @@
 #define _3PI_2 4.71238898038f
 #define _PI_6 0.52359877559f
 #define _RPM_TO_RADS 0.10471975512f
-
 
 #endif

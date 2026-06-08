@@ -22,6 +22,7 @@ public:
     // unsigned long getLatestTimestamp() { return (unsigned long)( (ready_timestamp + trigger_timestamp) / 2 ); }
     uint16_t getLatestDistance() { return latest_distance_cm; }
     bool isEnabled() { return enabled; }
+    bool isInitialised() { return initialised; }
 
     // Called by ISR - must be public for the static wrapper
     void onMeasurementReady();
@@ -36,6 +37,8 @@ protected:
     int SCL;
     int SDA;
     bool enabled = false;
+    bool initialised = false;
+    void markInitialised() { initialised = true; }
 
 private:
     virtual void requestDistance() = 0;

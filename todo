@@ -1,6 +1,5 @@
 BEFORE READING ANY OF THIS, A PLEDGE. I, WILLIAM BOYD, WILL ALWAYS WORK IN SECONDARY GIT BRANCHES -- NEVER ON MAIN !!!!!
 
-
 IMPROVING FOC PERFORMANCE -- TO TRY
     -Try different velocity estimation rates.
     -Try different FOC loop rates.

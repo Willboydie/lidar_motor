@@ -131,6 +131,10 @@ float FOCController::estimate_Vq(float _Iq) {
 
 void FOCController::enable() {
     if (enabled) return;
+    if (!initialised) {
+        Serial.println("Can't enable FOC controller for motor " + String(motor_number) + " - not initialised");
+        return;
+    }
     pwm_driver.enable();
     sensor.enable();
     PID_angle_controller.reset();
