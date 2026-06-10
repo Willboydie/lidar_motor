@@ -58,6 +58,12 @@
 // Telemetry
 #define FOC_STATUS_PERIOD_MS 5 // period of binary FOCStatusPacket stream to the UI
 
+// Current sense (SimpleFOC Shield 3.2, ACS712-05B)
+// ACS712-05B is 185 mV/A at the sensor; the shield maps its 0-5 V swing into
+// 0-3.3 V at the MCU pin, so the effective at-pin sensitivity is 185 * 3.3/5.
+// Nominal only — Stage 9 offset calibration / polarity check refines this.
+#define ACS712_MV_PER_AMP (185.0f * 3.3f / 5.0f) // = 122.1 mV/A at the ADC pin
+
 // FOC Timing
 // #define ANGLE_LOOP_HZ     50000
 // #define VELOCITY_LOOP_HZ   50000

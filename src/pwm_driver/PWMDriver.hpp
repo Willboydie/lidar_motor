@@ -27,7 +27,7 @@ protected:
   int n2;
   int n3;
   int en;
-  void* params;
+  void* params = nullptr;
 
 private:
   float duty_cycleA;

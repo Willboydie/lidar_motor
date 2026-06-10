@@ -29,9 +29,9 @@ Companion to [STM32G4_upgrade_plan.md](STM32G4_upgrade_plan.md). That document f
 | 4 | Centre-aligned + TRGO + master timer | `PWMDriverSTM32G4`, `stm32_mcu.cpp` | as above |
 | 5 | Zero-output `stopPwmHardware` | `PWMDriverSTM32G4` | as above + motor coil |
 | 6 | Open-loop FOC with new driver | `FOCController` wiring | full motor rig, no current sense |
-| 7 | ADC raw, software start | `InlineCurrentSenseSTM32G4` skeleton | full rig + bench supply on one phase |
-| 8 | ADC hardware-triggered + DMA | `InlineCurrentSenseSTM32G4::init` | full rig |
-| 9 | `getPhaseCurrents` + offset cal, open-loop logging | full sense class | full rig |
+| 7 | ADC raw, software start | `InlineCurrentSenseSTM32G4` skeleton | full rig + bench supply on one phase + foc_plotter |
+| 8 | ADC hardware-triggered + DMA | `InlineCurrentSenseSTM32G4::init` | full rig + foc_plotter |
+| 9 | `getPhaseCurrents` + offset cal, open-loop Iq vs target | full sense class | full rig + foc_plotter |
 | 10 | Closed-loop Iq | `FOCController::loop` | full rig + dyno fixture |
 | 11 | Closed-loop Id | `FOCController::loop` | full rig + dyno fixture |
 | 12 | Both motors, full FOC | `main.cpp` | full rig, both motors |
@@ -208,9 +208,37 @@ Stages 1, 2 and 3 are independent and can run in parallel across different peopl
 
 ---
 
+## Plotter telemetry for Stages 7–9
+
+Stages 7–9 use [UI/foc_plotter.py](UI/foc_plotter.py) as the primary bench instrument instead of raw serial text dumps. The plotter parses the binary `FOCStatusPacket` stream (header `0xAA`, 42 bytes, layout in [Interface.hpp](src/interface/Interface.hpp)) and overlays selected channels live; any `Serial.println` text lands in its log panel, so quantitative summary lines and live traces coexist on one port.
+
+Conventions for the Stage 7–9 test sketches:
+
+- `Serial.begin(BAUD_RATE)` (`460800` — the plotter default). Do **not** use 115200 as in [stm32g4_open_loop.hpp](src/tests/motor/stm32g4_open_loop.hpp).
+- Emit one packet every `FOC_STATUS_PERIOD_MS` (5 ms → 200 Hz) with `motor = 1` (X motor). The sketches build and `Serial.write` the packet directly — do **not** instantiate the full `Interface` / `StateMachine` stack, and do **not** go through `Interface::sendFOCStatus` (it is gated on `stateMachine.enabled`, i.e. the full FOC path we are explicitly avoiding here).
+- Once per second, `Serial.println` a summary line (mean / std over the last second per channel, in LSB or amps as appropriate). The plotter log panel shows it; pass criteria below reference these numbers.
+- The packet fields are repurposed per stage. Record the mapping in a comment at the top of each test sketch:
+
+| Packet field | Plotter channel | Stages 7–8 carry | Stage 9 carries |
+| --- | --- | --- | --- |
+| `angle` | Angle | 0 | electrical angle [rad, normalised] |
+| `raw_velocity` | Raw Velocity | raw 12-bit code, channel A [LSB] | `i_a` [A] |
+| `filtered_velocity` | Filtered Velocity | raw 12-bit code, channel B [LSB] | `i_b` [A] |
+| `angular_error` | Angular Error | 0 | `Id_meas` [A] |
+| `target_iq` | Target Iq | channel A, nominal amps¹ | `Iq_target` = `Vq / motor_phase_resistance` [A] |
+| `requested_vq` | Requested Vq | channel A, volts at pin | commanded `Vq` [V] |
+| `measured_iq` | Measured Iq | channel B, nominal amps¹ | `Iq_meas` from `getFOCCurrents` [A] |
+| all others | — | 0 | 0 |
+
+¹ Converted with the nominal `ACS712_MV_PER_AMP` gain about a nominal 1.65 V midpoint — uncalibrated, just to get the trace into ballpark amps before Stage 9's `calibrateOffsets()` exists.
+
+The headline comparison for debugging the current loop is **Target Iq vs Measured Iq** overlaid in the plotter (both enabled, others off): in Stage 9 these must track each other through an open-loop drive before any current loop is closed in Stage 10.
+
+---
+
 ## Stage 7 — ADC raw, software start
 
-**Goal.** Read both current-sense channels off the ACS712 outputs via the shield, **software-triggered**, no DMA, no TRGO. This is the calibration step: we want to see the bias, see the response to a known phase current, and only then move to the hardware-triggered path.
+**Goal.** Read both current-sense channels off the ACS712 outputs via the shield, **software-triggered**, no DMA, no TRGO. This is the calibration step: we want to see the bias, see the response to a known phase current, and only then move to the hardware-triggered path. All observations are made live in foc_plotter.
 
 **Work.**
 - Add a minimal `InlineCurrentSenseSTM32G4` skeleton with `init()` that:
@@ -220,17 +248,17 @@ Stages 1, 2 and 3 are independent and can run in parallel across different peopl
   - Runs `HAL_ADCEx_Calibration_Start`.
 - `getPhaseCurrents()` for this stage **does** poll (`HAL_ADC_Start`, `HAL_ADC_PollForConversion`, read `HAL_ADC_GetValue` per rank). This is a throw-away path — we replace it in Stage 8 — but it's the simplest correct way to validate hardware first.
 
-**New test sketch.** `src/tests/current_sense/stm32g4_adc_raw_test.hpp`. Logs raw 12-bit code + millivolts for both channels at 100 Hz.
+**New test sketch.** `src/tests/current_sense/stm32g4_adc_raw_test.hpp`. Polls both channels at 200 Hz and streams `FOCStatusPacket`s per the Stage 7–8 column of the mapping table above, plus the 1 Hz mean/std summary line.
 
 **Compile gate.** Both envs clean. (Teensy env excludes the new file via `build_src_filter`.)
 
-**Bench tests** (PWM driver off, motor open-circuit unless step 3):
-1. **Zero-current bias.** Both channels read close to `2048 ± 50` (≈ 1.65 V at the pin) for 30 s. Standard deviation `< 5 LSB`.
-2. **Channel independence.** Force phase A high by hand (touch the shield's phase-A current sense input through a 1 kΩ resistor to 3.3 V via a meter — or use a bench supply to push a known current through the phase). Channel A swings, channel B does not.
-3. **Polarity.** Push +0.5 A through phase A. Confirm direction of swing (positive or negative from bias). Record sign — Stage 9 uses this to set `gain_a` polarity.
-4. **Cross-talk.** Same as 3 but on phase B. Confirm channel A barely moves.
+**Bench tests** (PWM driver off, motor open-circuit unless step 3; foc_plotter connected at 460800, Motor 1 selected):
+1. **Zero-current bias.** Enable Raw Velocity + Filtered Velocity (raw codes A / B). Both traces sit flat at `2048 ± 50` (≈ 1.65 V on the Requested Vq trace) for 30 s. Summary line reports standard deviation `< 5 LSB` per channel.
+2. **Channel independence.** Force phase A high by hand (touch the shield's phase-A current sense input through a 1 kΩ resistor to 3.3 V via a meter — or use a bench supply to push a known current through the phase). The channel-A trace swings visibly; the channel-B trace stays flat. Pause the plotter and screenshot for the PR.
+3. **Polarity.** Push +0.5 A through phase A. Watch which way Target Iq (channel A, nominal amps) swings from zero. Record sign — Stage 9 uses this to set `gain_a` polarity.
+4. **Cross-talk.** Same as 3 but on phase B (Measured Iq trace). Confirm channel A barely moves.
 
-**Pass criteria.** All four checks pass.
+**Pass criteria.** All four checks pass; plotter screenshots of steps 1–4 attached to the PR.
 
 **Note.** If the bias is significantly away from `2048`, do not try to compensate in firmware — the shield's analog frontend is broken or the wrong ACS712 module is installed.
 
@@ -238,7 +266,7 @@ Stages 1, 2 and 3 are independent and can run in parallel across different peopl
 
 ## Stage 8 — ADC hardware-triggered + DMA
 
-**Goal.** Replace the polled path with the architecture: ADC triggered by master-timer TRGO, results streamed by DMA into `sample_buf[2]`. The motor is still driven open-loop; `getPhaseCurrents()` now becomes a non-blocking buffer read.
+**Goal.** Replace the polled path with the architecture: ADC triggered by master-timer TRGO, results streamed by DMA into `sample_buf[2]`. The motor is still driven open-loop (fixed duties only — no FOC); `getPhaseCurrents()` now becomes a non-blocking buffer read.
 
 **Work.**
 - `InlineCurrentSenseSTM32G4::init()` changes:
@@ -249,16 +277,16 @@ Stages 1, 2 and 3 are independent and can run in parallel across different peopl
   - `HAL_ADC_Start_DMA(adc, sample_buf, 2)`.
 - `getPhaseCurrents()` becomes the non-blocking version from [STM32G4_upgrade_plan.md §3.4](STM32G4_upgrade_plan.md).
 
-**New test sketch.** `src/tests/current_sense/stm32g4_adc_dma_test.hpp`. Logs the buffer contents at 100 Hz **and** at the same time toggles a GPIO inside a dummy `HAL_ADC_ConvCpltCallback` (or watches the DMA `NDTR` register decrement) so we can verify the sample rate on a scope.
+**New test sketch.** `src/tests/current_sense/stm32g4_adc_dma_test.hpp`. Streams the DMA buffer contents to foc_plotter (same packet mapping as Stage 7) **and** at the same time toggles a GPIO inside a dummy `HAL_ADC_ConvCpltCallback` (or watches the DMA `NDTR` register decrement) so we can verify the sample rate on a scope. The 1 Hz summary line additionally prints `NDTR` and the `OVR` flag so DMA health is visible in the plotter log panel.
 
 **Compile gate.** Both envs clean.
 
-**Bench tests** (PWM driver running, output to motor coils):
-1. **Bias.** Same as Stage 7 step 1 — both channels around `2048 ± 50` when zero-volt is applied to all phases.
-2. **Sample rate.** Scope-confirm the ADC EOS event rate equals the PWM frequency (25 kHz), or PWM/2 (12.5 kHz) if RCR could not be set on the chosen master. Document whichever was achieved.
-3. **Match Stage 7.** Repeat the Stage 7 step-3 polarity test. The DMA-buffer-derived current matches the polled measurement within `±10 LSB`.
-4. **PWM-modulation sync.** Drive `setPwm(6, 0, 0)` (open-loop, large duty on phase A). Capture `sample_buf[0]` over 1 s. Mean is offset from bias as expected; **ripple** in the buffer reading is at most a few LSB — confirming the trigger samples at a stable phase of the PWM cycle, not on a beat.
-5. **Stability.** 10 min soak driving a sine voltage on phase A. No DMA halt (`NDTR` keeps decrementing), no overrun (`OVR` bit stays clear).
+**Bench tests** (PWM driver running fixed duties, output to motor coils; foc_plotter connected):
+1. **Bias.** Same as Stage 7 step 1 — both raw-code traces around `2048 ± 50` when zero-volt is applied to all phases.
+2. **Sample rate.** Scope-confirm the ADC EOS event rate equals the PWM frequency (25 kHz), or PWM/2 (12.5 kHz) if RCR could not be set on the chosen master. Document whichever was achieved. (Scope, not plotter — the 200 Hz telemetry stream cannot resolve this.)
+3. **Match Stage 7.** Repeat the Stage 7 step-3 polarity test. The DMA-buffer-derived trace matches the Stage 7 polled trace within `±10 LSB` (compare the paused plotter trace against the Stage 7 screenshot, and the summary-line means).
+4. **PWM-modulation sync.** Drive `setPwm(6, 0, 0)` (open-loop, large fixed duty on phase A). Watch the channel-A raw-code trace over 1 s in the plotter. Mean is offset from bias as expected; **ripple** in the trace is at most a few LSB — confirming the trigger samples at a stable phase of the PWM cycle, not on a beat. A beat shows up unmistakably in the plotter as a slow oscillation.
+5. **Stability.** 10 min soak driving a sine voltage on phase A (direct duty modulation in the sketch — still no FOC). Plotter window set to 120 s: trace never freezes (DMA halt) and the summary line shows `NDTR` moving and `OVR` clear throughout.
 
 **Pass criteria.** All five checks pass.
 
@@ -266,27 +294,26 @@ Stages 1, 2 and 3 are independent and can run in parallel across different peopl
 
 ---
 
-## Stage 9 — `InlineCurrentSenseSTM32G4` full class: offset cal + logging
+## Stage 9 — `InlineCurrentSenseSTM32G4` full class: offset cal + target-vs-measured Iq in the plotter
 
-**Goal.** Wrap Stages 7–8 into the final class shape and verify `Iq` / `Id` computation against open-loop voltage drives. Still no closed-loop control — we're proving the measurement side.
+**Goal.** Wrap Stages 7–8 into the final class shape and verify `Iq` / `Id` computation against open-loop voltage drives, with **Target Iq vs Measured Iq overlaid live in foc_plotter**. Still no closed-loop control and no full FOC loop — we're proving the measurement side in isolation, so any disagreement between target and measured current seen here is a measurement bug, not a control bug.
 
 **Work.**
 - Add `calibrateOffsets`, `getFOCCurrents`, signed `gain_a` / `gain_b`, `offset_ia` / `offset_ib`, as per [STM32G4_upgrade_plan.md §3.1](STM32G4_upgrade_plan.md).
-- Wire `InlineCurrentSenseSTM32G4 current_sense1(ACS712_MV_PER_AMP, ADC_CS_X_1, ADC_CS_X_2, pwmDriver1);` into `main.cpp` (G4 branch).
-- In `FOCController::loop()`, **for this stage only**, after the existing `setPhaseVoltage()` call, sample `dq = current_sense.getFOCCurrents(electrical_angle)` and stash `Iq` and `Id` for logging. No control change.
+- **Do not touch `FOCController::loop()` or `main.cpp` in this stage.** The current-sense sampling lives entirely in the test sketch, which drives the motor open-loop in the style of [stm32g4_open_loop.hpp](src/tests/motor/stm32g4_open_loop.hpp): `setElectricalAngle()` + `setVq()` + `setPhaseVoltage()` directly, no `FOCController::loop()`, no PID path. Wiring `getFOCCurrents` into the production loop is Stage 10's first work item.
 
-**New test sketch.** `src/tests/current_sense/stm32g4_iq_open_loop_test.hpp`. Runs a slow electrical-angle ramp via direct `setPhaseVoltage` (`Vq = 2.0 V, Vd = 0`) while logging `Iq_meas`, `Id_meas`, raw a/b currents, and electrical angle at 200 Hz.
+**New test sketch.** `src/tests/current_sense/stm32g4_iq_open_loop_test.hpp`. Runs a slow electrical-angle ramp via direct `setPhaseVoltage` (`Vq = 2.0 V, Vd = 0`) while sampling `current_sense.getFOCCurrents(elec_angle)` with the **commanded** electrical angle. Streams packets at 200 Hz per the Stage 9 column of the mapping table: `Iq_target = Vq / motor_phase_resistance` on Target Iq, `Iq_meas` on Measured Iq, `Id_meas` on Angular Error, `i_a` / `i_b` on the velocity channels, commanded `Vq` on Requested Vq, electrical angle on Angle. The sketch self-sequences its test phases on a timer (e.g. 10 s each: `setPwm(0,0,0)` → ramp at `Vq = 0.5 V` → `1.0 V` → `2.0 V` → locked-rotor hold, then repeat), announcing each phase with a `Serial.println` so the transition is visible in the plotter log panel — foc_plotter owns the serial port and has no UI for sending commands, so don't design the test around live input.
 
 **Compile gate.** Both envs clean.
 
-**Bench tests.**
-1. **Calibration.** `calibrateOffsets()` after `pwm_driver.init()` with `setPwm(0,0,0)`. Offsets within `1.60 V – 1.70 V` for both channels. `gain_a`, `gain_b` set from `ACS712_MV_PER_AMP` (signed, polarity set per Stage 7 step 3).
-2. **Sign sweep.** With `Vq = +1.5 V`, slowly rotate the rotor by hand against the field. `Iq_meas` is positive and roughly constant; `Id_meas` stays near zero. If `Iq_meas` is negative, flip `gain_a` (and/or `gain_b`) sign and re-test.
-3. **Magnitude sanity.** With `Vq = 0.5 V` at locked rotor, `Iq_meas ≈ Vq / motor_phase_resistance` within `±30 %`. (Resistance estimate is rough; this is a gross check that we're in amps not millivolts.)
-4. **`i_c = -(i_a + i_b)` self-consistency.** Plot `i_a + i_b + i_c` from the log offline — should sum to zero within noise.
-5. **Noise floor.** With `setPwm(0,0,0)`, `Iq_meas` standard deviation `< 0.05 A`. If higher, suspect ground loop on the shield — fix hardware, don't filter.
+**Bench tests** (foc_plotter connected; default view = Target Iq + Measured Iq only):
+1. **Calibration.** `calibrateOffsets()` after `pwm_driver.init()` with `setPwm(0,0,0)`. Offsets within `1.60 V – 1.70 V` for both channels (printed to the plotter log panel). `gain_a`, `gain_b` set from `ACS712_MV_PER_AMP` (signed, polarity set per Stage 7 step 3).
+2. **Sign sweep.** With `Vq = +1.5 V`, slowly rotate the rotor by hand against the field. Measured Iq trace is positive and roughly constant, tracking the flat Target Iq trace; Angular Error (`Id_meas`) stays near zero. If Measured Iq is negative, flip `gain_a` (and/or `gain_b`) sign and re-test.
+3. **Magnitude sanity (target vs measured).** With `Vq = 0.5 V` at locked rotor, the Measured Iq trace sits on the Target Iq trace within `±30 %`. (Target Iq is `Vq / motor_phase_resistance`; the resistance estimate is rough — this is a gross check that we're in amps not millivolts.) Repeat at `Vq = 1.0 V` and `2.0 V`: the two traces step together. Pause + screenshot each step for the PR.
+4. **Phase-current shape.** During the slow electrical-angle ramp, enable Raw Velocity / Filtered Velocity (`i_a` / `i_b`): both are clean sinusoids in the electrical angle, 120° apart, equal amplitude. Distortion, clipping, or unequal amplitude here is exactly the class of measurement bug that corrupts `Iq_meas` downstream.
+5. **Noise floor.** With `setPwm(0,0,0)`, Measured Iq trace is flat around zero; summary line reports standard deviation `< 0.05 A`. If higher, suspect ground loop on the shield — fix hardware, don't filter.
 
-**Pass criteria.** All five checks pass.
+**Pass criteria.** All five checks pass. The Stage 9 exit artefact is a plotter capture of Target Iq and Measured Iq overlaid through the `Vq` step sequence of check 3 — this is the baseline against which the Stage 10 closed-loop traces are compared.
 
 ---
 
@@ -295,9 +322,10 @@ Stages 1, 2 and 3 are independent and can run in parallel across different peopl
 **Goal.** Replace `Vq = estimate_Vq(target_q_current)` with the closed-loop form from [STM32G4_upgrade_plan.md §4.2](STM32G4_upgrade_plan.md). `Vd` is **still zero** at this stage — we close one axis at a time.
 
 **Work.**
+- Wire `InlineCurrentSenseSTM32G4 current_sense1(ACS712_MV_PER_AMP, ADC_CS_X_1, ADC_CS_X_2, pwmDriver1);` into `main.cpp` (G4 branch) — deferred from Stage 9, where the sense class was exercised only from the test sketch.
 - Add `PIDControl PID_iq{...}` to `FOCController`.
 - Reset `PID_iq` inside `enable()` / `disable()` / mode-switch in [FOCController.cpp](src/foc_controller/FOCController.cpp:151).
-- In `loop()`: insert the current sense block, compute `iq_error = target_q_current - Iq_meas`, set `Vq = estimate_Vq(target_q_current) + PID_iq(iq_error)`. `Vd` stays zero.
+- In `loop()`: insert the current sense block (first time `getFOCCurrents` enters the production loop), compute `iq_error = target_q_current - Iq_meas`, set `Vq = estimate_Vq(target_q_current) + PID_iq(iq_error)`. `Vd` stays zero. Feed `Iq_meas` into `getMeasuredQCurrent()` so `Interface::sendFOCStatus` populates the `measured_iq` field with real data — from this stage onward foc_plotter's Target Iq / Measured Iq channels work natively, with no repurposed fields.
 - Add `IQ_P`, `IQ_I`, `IQ_D`, `IQ_RAMP` to [tweakable_params.h](src/utils/tweakable_params.h). Start with `IQ_P = 0.05`, `IQ_I = 0`, `IQ_D = 0`, `IQ_RAMP = 1e6`.
 
 **New test sketch.** `src/tests/current_sense/stm32g4_iq_closed_loop_test.hpp`. Steps `target_q_current` (`0 A → 0.2 A → 0 A → -0.2 A`) at 1 Hz while running the existing angle-hold loop at a fixed `setTargetAngle(0)`.
