@@ -21,6 +21,10 @@ public:
     return p->timers_handle[0];
   }
 
+  STM32DriverParams* getDriverParams() const {
+    return static_cast<STM32DriverParams*>(params);
+  }
+
 private:
   void* configure3PWM(long pwm_frequency, const int pinA, const int pinB, const int pinC) override;
   void write3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params) override;

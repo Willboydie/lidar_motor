@@ -2,14 +2,16 @@
 FOC Realtime Plotter
 Qt (PySide6 + pyqtgraph) tool that receives binary FOCStatusPacket telemetry
 from the firmware (see `Interface::sendFOCStatus`) and plots selected channels
-in real time for tuning and debugging.
+in real time for tuning and debugging. One or both motors can be overlaid on
+the same axes (M1 solid, M2 dashed).
 
-Packet layout (little-endian, packed, 42 bytes):
+Packet layout (little-endian, packed, 66 bytes):
     uint8  header   (0xAA)
     uint8  motor    (1 or 2)
     float  angle, raw_velocity, filtered_velocity, target_angle,
            target_velocity, angular_error, velocity_error,
-           target_iq, requested_vq, measured_iq
+           target_iq, requested_vq, measured_iq,
+           raw_adc_a, raw_adc_b, amps_a, amps_b, volts_a, volts_b
 
 Any non-packet bytes (e.g. Serial.println text from the firmware) are decoded
 and shown in the log panel at the bottom.
@@ -33,28 +35,53 @@ from PySide6 import QtCore, QtWidgets
 
 # ---------- Protocol (mirrors src/interface/Interface.hpp) ----------
 FOC_STATUS_HEADER = 0xAA  # 0b10101010
-PACKET_STRUCT = struct.Struct("<BB10f")
-PACKET_SIZE = PACKET_STRUCT.size  # 42 bytes
+PACKET_STRUCT = struct.Struct("<BB16f")
+PACKET_SIZE = PACKET_STRUCT.size  # 66 bytes
 VALID_MOTORS = (1, 2)
+# values[10] and values[11] are raw_adc_a / raw_adc_b after the 10 motion floats
+RAW_ADC_A_INDEX = 10
+RAW_ADC_B_INDEX = 11
+MIN_PLAUSIBLE_RAW_ADC = 200
+MAX_PLAUSIBLE_RAW_ADC = 4000
 
 DEFAULT_BAUD = 460800
 
+MOTOR_LABELS = {1: "M1", 2: "M2"}
+
 # (name, unit, default pen colour, plotted by default)
 CHANNELS = [
-    ("Angle",             "rad",   "#ffd700", True),
+    ("Angle",             "rad",   "#ffd700", False),
     ("Raw Velocity",      "rad/s", "#666688", False),
-    ("Filtered Velocity", "rad/s", "#00bfff", True),
-    ("Target Angle",      "rad",   "#ff8c00", True),
+    ("Filtered Velocity", "rad/s", "#00bfff", False),
+    ("Target Angle",      "rad",   "#ff8c00", False),
     ("Target Velocity",   "rad/s", "#1e90ff", False),
     ("Angular Error",     "rad",   "#ff4444", False),
     ("Velocity Error",    "rad/s", "#ff44ff", False),
     ("Target Iq",         "A",     "#44ff44", False),
     ("Requested Vq",      "V",     "#44ffff", False),
     ("Measured Iq",       "A",     "#aaff00", False),
+    ("Raw ADC A",         "LSB",   "#c080ff", True),
+    ("Raw ADC B",         "LSB",   "#8080ff", True),
+    ("Amps A",            "A",     "#ff8844", True),
+    ("Amps B",            "A",     "#ff6688", True),
+    ("Volts A",           "V",     "#88ffcc", True),
+    ("Volts B",           "V",     "#66ccff", True),
 ]
 NUM_CHANNELS = len(CHANNELS)
 
 HISTORY_SAMPLES = 30000  # ~150 s at 200 Hz
+
+
+def _motor_pen(base_colour: str, motor: int):
+    """Solid pen for M1; dashed + slightly lighter for M2 so both are visible together."""
+    colour = pg.mkColor(base_colour)
+    if motor == 2:
+        colour = colour.lighter(130)
+    return pg.mkPen(
+        colour,
+        width=1.5 if motor == 1 else 1.25,
+        style=QtCore.Qt.PenStyle.SolidLine if motor == 1 else QtCore.Qt.PenStyle.DashLine,
+    )
 
 
 class SerialReader(threading.Thread):
@@ -125,6 +152,15 @@ class SerialReader(threading.Thread):
                 self._consume_text(1)
                 continue
             fields = PACKET_STRUCT.unpack_from(buf, 0)
+            raw_a = fields[2 + RAW_ADC_A_INDEX]
+            raw_b = fields[2 + RAW_ADC_B_INDEX]
+            if not (
+                MIN_PLAUSIBLE_RAW_ADC <= raw_a <= MAX_PLAUSIBLE_RAW_ADC
+                and MIN_PLAUSIBLE_RAW_ADC <= raw_b <= MAX_PLAUSIBLE_RAW_ADC
+            ):
+                # Misaligned 0xAA — resync one byte at a time
+                self._consume_text(1)
+                continue
             del buf[:PACKET_SIZE]
             self.packet_sink(fields[1], time.monotonic(), fields[2:])
         self._flush_text()
@@ -194,7 +230,7 @@ class FOCPlotter(QtWidgets.QMainWindow):
         self.histories = {1: MotorHistory(), 2: MotorHistory()}
         self.paused = False
         self._rate_last_time = time.monotonic()
-        self._rate_last_count = 0
+        self._rate_last_counts = {1: 0, 2: 0}
 
         self.text_received.connect(self._append_log)
         self.error_received.connect(self._on_serial_error)
@@ -241,15 +277,24 @@ class FOCPlotter(QtWidgets.QMainWindow):
         conn_layout.addWidget(self.status_label, 2, 0, 1, 3)
         panel.addWidget(conn_group)
 
-        # Motor selector
-        motor_group = QtWidgets.QGroupBox("Motor")
-        motor_layout = QtWidgets.QHBoxLayout(motor_group)
-        self.motor_buttons = QtWidgets.QButtonGroup(self)
+        # Motor overlay — check one or both to plot simultaneously
+        motor_group = QtWidgets.QGroupBox("Motors")
+        motor_layout = QtWidgets.QVBoxLayout(motor_group)
+        self.motor_checks = {}
+        motor_btn_row = QtWidgets.QHBoxLayout()
         for n in VALID_MOTORS:
-            btn = QtWidgets.QRadioButton(f"Motor {n}")
-            self.motor_buttons.addButton(btn, n)
-            motor_layout.addWidget(btn)
-        self.motor_buttons.button(1).setChecked(True)
+            cb = QtWidgets.QCheckBox(f"Motor {n} ({MOTOR_LABELS[n]})")
+            cb.setChecked(True)
+            cb.toggled.connect(self._on_motor_toggled)
+            self.motor_checks[n] = cb
+            motor_layout.addWidget(cb)
+        all_m_btn = QtWidgets.QPushButton("Both")
+        one_m_btn = QtWidgets.QPushButton("M1 only")
+        all_m_btn.clicked.connect(lambda: self._set_all_motors(True))
+        one_m_btn.clicked.connect(lambda: self._set_all_motors(False))
+        motor_btn_row.addWidget(all_m_btn)
+        motor_btn_row.addWidget(one_m_btn)
+        motor_layout.addLayout(motor_btn_row)
         panel.addWidget(motor_group)
 
         # Channel checkboxes
@@ -303,13 +348,14 @@ class FOCPlotter(QtWidgets.QMainWindow):
         self.plot_widget.setBackground("#101014")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
         self.plot_widget.setLabel("bottom", "time", units="s")
-        self.plot_widget.addLegend(offset=(10, 10))
-        self.curves = []
-        for name, unit, colour, _ in CHANNELS:
-            curve = self.plot_widget.plot(
-                [], [], pen=pg.mkPen(colour, width=1.5), name=f"{name} [{unit}]"
-            )
-            self.curves.append(curve)
+        self.legend = self.plot_widget.addLegend(offset=(10, 10))
+        self.curves = {}
+        for motor in VALID_MOTORS:
+            for i, (name, unit, colour, _) in enumerate(CHANNELS):
+                label = f"{MOTOR_LABELS[motor]} {name} [{unit}]"
+                self.curves[(motor, i)] = self.plot_widget.plot(
+                    [], [], pen=_motor_pen(colour, motor), name=label
+                )
         right.addWidget(self.plot_widget, 1)
 
         self.log_box = QtWidgets.QPlainTextEdit()
@@ -387,6 +433,24 @@ class FOCPlotter(QtWidgets.QMainWindow):
         for cb in self.channel_checks:
             cb.setChecked(on)
 
+    def _set_all_motors(self, on):
+        for cb in self.motor_checks.values():
+            cb.setChecked(on)
+        if not on:
+            self.motor_checks[1].setChecked(True)
+
+    def _enabled_motors(self):
+        return [m for m in VALID_MOTORS if self.motor_checks[m].isChecked()]
+
+    def _on_motor_toggled(self):
+        if not any(cb.isChecked() for cb in self.motor_checks.values()):
+            sender = self.sender()
+            if isinstance(sender, QtWidgets.QCheckBox):
+                sender.setChecked(True)
+            else:
+                self.motor_checks[1].setChecked(True)
+        self._update_plot()
+
     def _toggle_pause(self, checked):
         self.paused = checked
         self.pause_btn.setText("Resume" if checked else "Pause")
@@ -395,37 +459,46 @@ class FOCPlotter(QtWidgets.QMainWindow):
     def _update_plot(self):
         if self.paused:
             return
-        motor = self.motor_buttons.checkedId()
-        history = self.histories[motor]
-        enabled = [i for i, cb in enumerate(self.channel_checks) if cb.isChecked()]
-
-        t, chans = history.snapshot(enabled)
+        enabled_motors = self._enabled_motors()
+        enabled_channels = [i for i, cb in enumerate(self.channel_checks) if cb.isChecked()]
         now = time.monotonic()
         window = self.window_spin.value()
 
-        if t.size:
-            rel_t = t - now
-            start = np.searchsorted(rel_t, -window)
-        else:
-            rel_t = t
-            start = 0
-
-        for i, curve in enumerate(self.curves):
-            if i in chans and t.size:
-                curve.setData(rel_t[start:], chans[i][start:])
+        for motor in VALID_MOTORS:
+            show_motor = motor in enabled_motors
+            t, chans = self.histories[motor].snapshot(enabled_channels)
+            if t.size:
+                rel_t = t - now
+                start = np.searchsorted(rel_t, -window)
             else:
-                curve.setData([], [])
+                rel_t = t
+                start = 0
+
+            for i in range(NUM_CHANNELS):
+                curve = self.curves[(motor, i)]
+                if show_motor and i in chans and t.size:
+                    curve.setData(rel_t[start:], chans[i][start:])
+                    curve.show()
+                else:
+                    curve.setData([], [])
+                    if not show_motor:
+                        curve.hide()
+
         self.plot_widget.setXRange(-window, 0, padding=0)
 
     def _update_rate(self):
-        motor = self.motor_buttons.checkedId()
-        count = self.histories[motor].packet_count
         now = time.monotonic()
         dt = now - self._rate_last_time
-        rate = max(0.0, (count - self._rate_last_count) / dt) if dt > 0 else 0.0
+        rates = {}
+        for motor in VALID_MOTORS:
+            count = self.histories[motor].packet_count
+            prev = self._rate_last_counts[motor]
+            rates[motor] = max(0.0, (count - prev) / dt) if dt > 0 else 0.0
+            self._rate_last_counts[motor] = count
         self._rate_last_time = now
-        self._rate_last_count = count
-        self.rate_label.setText(f"{rate:.0f} packets/s")
+        self.rate_label.setText(
+            f"M1: {rates[1]:.0f}  M2: {rates[2]:.0f} pkt/s"
+        )
 
     # ---------- Log ----------
     def _append_log(self, text):

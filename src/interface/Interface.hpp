@@ -58,7 +58,13 @@ struct FOCStatusPacket {
     float velocity_error;     // [rad/s]
     float target_iq;          // [A]
     float requested_vq;       // [V]
-    float measured_iq;        // [A] (zero until current sensing is implemented)
+    float measured_iq;        // [A]
+    float raw_adc_a;          // current sense A, raw 12-bit code [LSB]
+    float raw_adc_b;          // current sense B, raw 12-bit code [LSB]
+    float amps_a;             // phase A current [A]
+    float amps_b;             // phase B current [A]
+    float volts_a;            // phase A sense voltage at pin [V]
+    float volts_b;            // phase B sense voltage at pin [V]
 };
 #pragma pack(pop)
 

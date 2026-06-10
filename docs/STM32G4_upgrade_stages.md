@@ -294,6 +294,49 @@ The headline comparison for debugging the current loop is **Target Iq vs Measure
 
 ---
 
+## Stage 8.5 — ADC TRGO+DMA dual motor
+
+**Goal.** Repeat Stage 8 with **both** motors running simultaneously: motor X (TIM1 → ADC1, DMA1 Ch1) and motor Y (TIM8 → ADC2, DMA1 Ch2). Confirms the two current-sense instances do not collide on DMA, IRQ, or probe pins before Stage 9 wires the measurement class into open-loop drives.
+
+**Work.**
+- Extend `InlineCurrentSenseSTM32G4` so two instances can run at once: per-instance conv/tim counters and probe pins; DMA1 Ch1/Ch2 IRQ dispatch to the correct `hdma` handle; `HAL_ADC_ConvCpltCallback` routes by ADC instance. **Quiesce the sibling ADC12 instance (stop its DMA) before calibrating/initing the next** — the RM forbids calibrating ADC1 while ADC2 is converting, which breaks the second instance if init is sequential.
+- No change to the Stage 8 single-motor init path beyond the multi-instance fix above.
+
+**New test sketch.** `src/tests/current_sense/stm32g4_adc_dma_dual_test.hpp`. Same self-sequenced phases and packet mapping as Stage 8, but both `PWMDriverSTM32G4` instances drive in parallel. Current sense uses plan-faithful dual init: `init(true, /*defer_dma_start=*/true)` on each instance (GPIO → ADC → DMA link → calibrate, no timer pause), then `commitDualDmaStart(x, y)` starts both DMA streams together. Fails loudly if `validateDmaSampling()` does not see buffer movement within 50 ms.
+
+**Compile gate.** Both envs clean.
+
+**Bench tests** (both motor coils connected; foc_plotter connected; switch motor selector to inspect X vs Y):
+1. **Bias (both).** Same as Stage 8 step 1 — raw-code traces for motor 1 and motor 2 each sit at `2048 ± 50` during the 0–60 s phase. Summary lines for `X:` and `Y:` each report std dev `< 5 LSB` per channel.
+2. **Sample rate (both).** Scope-confirm each probe toggles at the PWM frequency (25 kHz) or PWM/2 (12.5 kHz) per motor's master timer RCR — independently on PA6 and PB5.
+3. **Match Stage 7/8 (both).** Repeat polarity check on each motor; DMA traces match Stage 7/8 single-motor captures within `±10 LSB`.
+4. **PWM-modulation sync (both).** During the 60–120 s fixed-duty phase, both motors at `setPwm(6,0,0)`. Channel-A raw ripple ≤ few LSB on each motor trace; no beat-frequency artefact between X and Y.
+5. **Stability (both).** 10 min sine soak (120 s+ phase). Neither motor trace freezes; both summary lines show `NDTR` moving and `OVR` clear throughout.
+
+**Pass criteria.** All five checks pass on both motors.
+
+---
+
+## Stage 8.6 — Open-loop Vq rotation + PWM/TRGO scope gate
+
+**Goal.** Before Stage 9's current-measurement open loop, prove that **centre-aligned 3PWM** driven by a **rotating Vq vector** (electrical angle ramp) produces healthy, smoothly changing duty on all phase pins, and that **TRGO** (monitored via GPIO on TIM UPDATE) sits at a **fixed phase** of the PWM carrier — the count-zero / triangle-bottom instant used for ADC sync.
+
+**Work.** None beyond the new test sketch — reuses `PWMDriverSTM32G4` + `stm32_syncTimers` from Stages 4 and 8.5. No ADC, no `FOCController::loop()`.
+
+**New test sketch.** `src/tests/current_sense/stm32g4_vq_rotate_trgo_test.hpp`. Both motors run the same electrical angle ramp at `Vq = 4 V`, `Vd = 0`, ~one electrical rev / 10 s. TRGO proxies: **PA6 (X)**, **PB5 (Y)** toggle on master-timer **UPDATE** (same instant as TRGO). Streams dual `FOCStatusPacket`s at 200 Hz for foc_plotter (Angle, Va/Vb/Vc on velocity/error channels, Vq on Requested Vq).
+
+**Compile gate.** `[env:stm32g4]` clean.
+
+**Bench tests** (coils connected or free — scope required; foc_plotter optional):
+1. **PWM shape (both motors).** Scope all six outputs (X: PA8–PA10, Y: PC6/PC7/PB9). Duties modulate smoothly as angle advances; no glitches, clipping, or stuck channels.
+2. **TRGO rate.** PA6 and PB5 each toggle at **25 kHz** (or document 12.5 kHz if RCR could not be set). Summary line reports ~25000 TRGO/s per motor.
+3. **TRGO phase vs PWM.** On one channel (e.g. PA8) plus PA6: TRGO edge occurs at the **same sub-cycle position every period** (triangle bottom / mid-low-side sample point per [STM32G4_pwm_and_current_sense.md](STM32G4_pwm_and_current_sense.md) §5) — it must **not** walk relative to the PWM edges as duty changes.
+4. **Plotter sanity (optional).** Angle ramps 0 → 2π over 10 s; Va/Vb/Vc on both motors show 120°-spaced sinusoids.
+
+**Pass criteria.** Checks 1–3 pass on both motors.
+
+---
+
 ## Stage 9 — `InlineCurrentSenseSTM32G4` full class: offset cal + target-vs-measured Iq in the plotter
 
 **Goal.** Wrap Stages 7–8 into the final class shape and verify `Iq` / `Id` computation against open-loop voltage drives, with **Target Iq vs Measured Iq overlaid live in foc_plotter**. Still no closed-loop control and no full FOC loop — we're proving the measurement side in isolation, so any disagreement between target and measured current seen here is a measurement bug, not a control bug.

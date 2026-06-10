@@ -44,7 +44,13 @@ void Interface::sendFOCStatus(FOCController& focController, Sensor& sensor) {
         focController.getVelocityError(),
         focController.getTargetQCurrent(),
         focController.getVq(),
-        focController.getMeasuredQCurrent()
+        focController.getMeasuredQCurrent(),
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
     };
 
     Serial.write((uint8_t*)&packet, sizeof(packet));

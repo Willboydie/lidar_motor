@@ -10,19 +10,11 @@
 
 //
 
-// Packet field mapping (Stages 7-8 column of the table in the stages doc):
-
-//   raw_velocity      <- raw 12-bit code, channel A [LSB]
-
-//   filtered_velocity <- raw 12-bit code, channel B [LSB]
-
-//   target_iq         <- channel A, nominal amps (uncalibrated)
-
-//   requested_vq      <- channel A, volts at pin
-
-//   measured_iq       <- channel B, nominal amps (uncalibrated)
-
-//   all others        <- 0
+// Packet fields (FOCStatusPacket — see Interface.hpp):
+//   raw_adc_a, raw_adc_b  <- raw 12-bit codes [LSB]
+//   amps_a, amps_b        <- nominal phase currents [A]
+//   volts_a, volts_b      <- pin voltages [V]
+//   all motion / Iq fields <- 0
 
 //
 
@@ -147,31 +139,16 @@ inline void stm32g4_adc_raw_test() {
 
 
             FOCStatusPacket packet = {
-
                 FOC_STATUS_HEADER,
-
-                1,              // motor X
-
-                0.0f,           // angle
-
-                (float)rawA,    // raw_velocity      <- raw code A [LSB]
-
-                (float)rawB,    // filtered_velocity <- raw code B [LSB]
-
-                0.0f,           // target_angle
-
-                0.0f,           // target_velocity
-
-                0.0f,           // angular_error
-
-                0.0f,           // velocity_error
-
-                amps_a,         // target_iq         <- channel A nominal amps
-
-                volts_a,        // requested_vq      <- channel A volts at pin
-
-                amps_b          // measured_iq       <- channel B nominal amps
-
+                1,
+                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 0.0f,
+                (float)rawA,
+                (float)rawB,
+                amps_a,
+                amps_b,
+                volts_a,
+                volts_b,
             };
 
             Serial.write((uint8_t*)&packet, sizeof(packet));

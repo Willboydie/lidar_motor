@@ -3,11 +3,23 @@
 #include "PeripheralPins.h"
 #include "pinmap.h"
 #include "pwm_driver/stm32g4/PWMDriverSTM32G4.hpp"
+#include "pwm_driver/stm32g4/stm32_mcu.h"
 #include "pwm_driver/stm32g4/stm32_timerutils.h"
 #include "utils/quick_defs.h"
+#include "stm32g4xx_ll_adc.h"
 #include "stm32g4xx_ll_tim.h"
+
 static constexpr uint32_t kAdcPollTimeoutMs = 100;
-static constexpr uint32_t kAdcSampleTime = ADC_SAMPLETIME_47CYCLES_5;
+// upgrade plan §3.2 step 4
+static constexpr uint32_t kAdcSampleTime = ADC_SAMPLETIME_2CYCLES_5;
+
+static InlineCurrentSenseSTM32G4* g_adc1_dma_owner = NULL;
+static InlineCurrentSenseSTM32G4* g_adc2_dma_owner = NULL;
+static InlineCurrentSenseSTM32G4* g_adc1_hw_prepared = NULL;
+static InlineCurrentSenseSTM32G4* g_adc2_hw_prepared = NULL;
+static DMA_HandleTypeDef* g_dma1_ch1_hdma = NULL;
+static DMA_HandleTypeDef* g_dma1_ch2_hdma = NULL;
+
 // ---------- PinMap / ADC helpers (upgrade plan §3.2 steps 1–2) ----------
 static uint32_t _adcChannelForPin(PinName pin, ADC_TypeDef* adc) {
     for (int i = 0; PinMap_ADC[i].pin != NC; i++) {
@@ -25,13 +37,20 @@ static ADC_TypeDef* _findCommonADC(PinName pinA, PinName pinB) {
     }
     return nullptr;
 }
-static void _adcPinInitForAdc(PinName pin, ADC_TypeDef* adc) {
+static bool _adcPinInitForAdc(PinName pin, ADC_TypeDef* adc) {
     for (int i = 0; PinMap_ADC[i].pin != NC; i++) {
         if (pin != (PinMap_ADC[i].pin & ~ALTX_MASK)) continue;
         if ((ADC_TypeDef*)PinMap_ADC[i].peripheral != adc) continue;
         pinmap_pinout(PinMap_ADC[i].pin, PinMap_ADC);
-        return;
+        return true;
     }
+    return false;
+}
+static void _pauseMasterTim(TIM_TypeDef* tim) {
+    if (tim != NULL) LL_TIM_DisableCounter(tim);
+}
+static void _resumeMasterTim(TIM_TypeDef* tim) {
+    if (tim != NULL) LL_TIM_EnableCounter(tim);
 }
 static void _adcClockEnable(ADC_TypeDef* adc) {
     if (adc == ADC1 || adc == ADC2) {
@@ -60,6 +79,79 @@ static void _adcClockEnable(ADC_TypeDef* adc) {
 #endif
     }
 #endif
+}
+static InlineCurrentSenseSTM32G4* _ownerForAdc(ADC_TypeDef* adc) {
+    if (adc == ADC1) return g_adc1_dma_owner;
+    if (adc == ADC2) return g_adc2_dma_owner;
+    return NULL;
+}
+static void _ensureAdcIndependent(ADC_TypeDef* adc) {
+#if defined(ADC12_COMMON)
+    if (adc == ADC1 || adc == ADC2) {
+        LL_ADC_SetMultimode(ADC12_COMMON, LL_ADC_MULTI_INDEPENDENT);
+    }
+#endif
+}
+static void _registerDmaOwner(InlineCurrentSenseSTM32G4* owner, DMA_HandleTypeDef* hdma) {
+    if (owner == NULL || hdma == NULL || hdma->Instance == NULL) return;
+    if (hdma->Instance == DMA1_Channel1) {
+        g_dma1_ch1_hdma = hdma;
+        g_adc1_dma_owner = owner;
+        HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 6, 0);
+        HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
+    } else if (hdma->Instance == DMA1_Channel2) {
+        g_dma1_ch2_hdma = hdma;
+        g_adc2_dma_owner = owner;
+        HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 6, 0);
+        HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+    }
+}
+static void _unregisterDmaOwner(InlineCurrentSenseSTM32G4* owner, DMA_HandleTypeDef* hdma) {
+    if (hdma == NULL || hdma->Instance == NULL) return;
+    if (hdma->Instance == DMA1_Channel1) {
+        if (g_adc1_dma_owner == owner) g_adc1_dma_owner = NULL;
+        if (g_dma1_ch1_hdma == hdma) g_dma1_ch1_hdma = NULL;
+        HAL_NVIC_DisableIRQ(DMA1_Channel1_IRQn);
+    } else if (hdma->Instance == DMA1_Channel2) {
+        if (g_adc2_dma_owner == owner) g_adc2_dma_owner = NULL;
+        if (g_dma1_ch2_hdma == hdma) g_dma1_ch2_hdma = NULL;
+        HAL_NVIC_DisableIRQ(DMA1_Channel2_IRQn);
+    }
+}
+static void _applyRegularTriggerToLL(ADC_TypeDef* adc, TIM_TypeDef* timer) {
+    if (adc == NULL || timer == NULL) return;
+    if (timer == TIM1) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM1_TRGO);
+    } else if (timer == TIM8) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM8_TRGO);
+    } else if (timer == TIM2) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM2_TRGO);
+    } else if (timer == TIM3) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM3_TRGO);
+    } else if (timer == TIM4) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM4_TRGO);
+    } else if (timer == TIM6) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM6_TRGO);
+    } else if (timer == TIM7) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM7_TRGO);
+    } else if (timer == TIM15) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM15_TRGO);
+    } else if (timer == TIM20) {
+        LL_ADC_REG_SetTriggerSource(adc, LL_ADC_REG_TRIG_EXT_TIM20_TRGO);
+    } else {
+        return;
+    }
+    LL_ADC_REG_SetTriggerEdge(adc, LL_ADC_REG_TRIG_EXT_RISING);
+}
+static void _ensureUnlimitedDma(ADC_TypeDef* adc) {
+    LL_ADC_REG_SetDMATransfer(adc, LL_ADC_REG_DMA_TRANSFER_UNLIMITED);
+}
+static void _disableAdcIfEnabled(ADC_TypeDef* adc) {
+    if (adc == NULL || !LL_ADC_IsEnabled(adc)) return;
+    if (LL_ADC_REG_IsConversionOngoing(adc)) {
+        LL_ADC_REG_StopConversion(adc);
+    }
+    LL_ADC_Disable(adc);
 }
 static uint32_t _timerToRegularTRGO(TIM_TypeDef* timer) {
     if (timer == TIM1) return ADC_EXTERNALTRIG_T1_TRGO;
@@ -97,7 +189,13 @@ static void _resetAdcHandle(ADC_HandleTypeDef& hadc, ADC_TypeDef* adc) {
     hadc.Lock = HAL_UNLOCKED;
     hadc.DMA_Handle = NULL;
 }
-static void _tearDownDma(ADC_HandleTypeDef& hadc, DMA_HandleTypeDef& hdma) {
+void InlineCurrentSenseSTM32G4::_tearDownDma(
+    InlineCurrentSenseSTM32G4* owner,
+    ADC_HandleTypeDef& hadc,
+    DMA_HandleTypeDef& hdma
+) {
+    if (owner != NULL) owner->_stopDmaConversions();
+    _unregisterDmaOwner(owner, &hdma);
     if (hadc.Instance != NULL) {
         HAL_ADC_Stop_DMA(&hadc);
         HAL_ADC_DeInit(&hadc);
@@ -171,6 +269,28 @@ static bool _configureAdcChannels(
     }
     return true;
 }
+static void _logHardwareConfig(
+    int pin_a,
+    int pin_b,
+    ADC_TypeDef* adc,
+    TIM_HandleTypeDef* master,
+    PinName pn_a,
+    PinName pn_b
+) {
+    Serial.print("CS: TRGO+DMA on ADC");
+    Serial.print((adc == ADC1) ? 1 : (adc == ADC2) ? 2 : 0);
+    Serial.print(", master TIM");
+    Serial.print(stm32_getTimerNumber(master->Instance));
+    Serial.print(", pins A");
+    Serial.print(pin_a);
+    Serial.print("/B");
+    Serial.print(pin_b);
+    Serial.print(", rank1=IN");
+    Serial.print((int)__LL_ADC_CHANNEL_TO_DECIMAL_NB(_adcChannelForPin(pn_a, adc)));
+    Serial.print(" rank2=IN");
+    Serial.println((int)__LL_ADC_CHANNEL_TO_DECIMAL_NB(_adcChannelForPin(pn_b, adc)));
+}
+
 // ---------- InlineCurrentSenseSTM32G4 ----------
 InlineCurrentSenseSTM32G4::InlineCurrentSenseSTM32G4(float mVpA, int pinA_, int pinB_, PWMDriverSTM32G4& _driver)
 : gain_a(1000.0f / mVpA)
@@ -183,6 +303,18 @@ InlineCurrentSenseSTM32G4::InlineCurrentSenseSTM32G4(float mVpA, int pinA_, int 
 , pinB(pinB_)
 , driver(_driver)
 {}
+void InlineCurrentSenseSTM32G4::_quiesceAllAdc12() {
+    if (g_adc1_dma_owner != NULL) g_adc1_dma_owner->_stopDmaConversions();
+    if (g_adc2_dma_owner != NULL) g_adc2_dma_owner->_stopDmaConversions();
+}
+void InlineCurrentSenseSTM32G4::_reapplyHardwareTrigger() {
+    if (!hardware_dma_ || adc_handle.Instance == NULL || master_tim_ == NULL) return;
+    if (!LL_ADC_IsEnabled(adc_handle.Instance)) {
+        LL_ADC_Enable(adc_handle.Instance);
+    }
+    _applyRegularTriggerToLL(adc_handle.Instance, master_tim_);
+    _ensureUnlimitedDma(adc_handle.Instance);
+}
 bool InlineCurrentSenseSTM32G4::_pollSampleBuf() {
     HAL_ADC_Stop(&adc_handle);
     if (HAL_ADC_Start(&adc_handle) != HAL_OK) {
@@ -201,28 +333,16 @@ bool InlineCurrentSenseSTM32G4::_pollSampleBuf() {
     HAL_ADC_Stop(&adc_handle);
     return true;
 }
-bool InlineCurrentSenseSTM32G4::init(bool hardware_trigger) {
-    PinName pn_a = analogInputToPinName(pinA);
-    PinName pn_b = analogInputToPinName(pinB);
-    if (pn_a == NC || pn_b == NC) {
-        Serial.println("CS: ERR: current sense pin is not an analog pin");
-        return false;
-    }
-    ADC_TypeDef* adc = _findCommonADC(pn_a, pn_b);
-    if (adc == nullptr) {
-        Serial.println("CS: ERR: no common ADC for the current sense pins");
-        return false;
-    }
-    _adcClockEnable(adc);
-    _adcPinInitForAdc(pn_a, adc);
-    _adcPinInitForAdc(pn_b, adc);
-    TIM_HandleTypeDef* master = driver.getMasterTimerHandle();
-    uint32_t trgo = 0xFFFFFFFF;
-    if (hardware_trigger && master != NULL) {
-        trgo = _timerToRegularTRGO(master->Instance);
-    }
-    hardware_dma_ = hardware_trigger && (master != NULL) && (trgo != 0xFFFFFFFF);
-    _tearDownDma(adc_handle, hdma);
+bool InlineCurrentSenseSTM32G4::_prepareHardware(
+    PinName pn_a,
+    PinName pn_b,
+    ADC_TypeDef* adc,
+    TIM_HandleTypeDef* master,
+    uint32_t trgo
+) {
+    // §3.2 steps 3–7: ADC init, channels, DMA link, calibrate, map ADC trigger.
+    // TRGO+RCR on the master timer is already set in configure3PWM (§2.2) — do not pause/reconfigure it here.
+    _tearDownDma(this, adc_handle, hdma);
     _resetAdcHandle(adc_handle, adc);
     adc_handle.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
     adc_handle.Init.Resolution = ADC_RESOLUTION_12B;
@@ -236,11 +356,62 @@ bool InlineCurrentSenseSTM32G4::init(bool hardware_trigger) {
     adc_handle.Init.NbrOfConversion = 2;
     adc_handle.Init.SamplingMode = ADC_SAMPLING_MODE_NORMAL;
     adc_handle.Init.OversamplingMode = DISABLE;
-    if (hardware_dma_) {
-        _applyHardwareAdcFields(adc_handle, trgo);
-    } else {
-        _applySoftwareAdcFields(adc_handle);
+    _applyHardwareAdcFields(adc_handle, trgo);
+    if (HAL_ADC_Init(&adc_handle) != HAL_OK) {
+        Serial.print("CS: ERR: HAL_ADC_Init failed, err=0x");
+        Serial.println(adc_handle.ErrorCode, HEX);
+        return false;
     }
+    if (!_configureAdcChannels(adc_handle, pn_a, pn_b, adc)) {
+        return false;
+    }
+    if (!_configureDmaForAdc(adc_handle, hdma)) {
+        Serial.println("CS: ERR: DMA init failed");
+        return false;
+    }
+    // RM: do not calibrate ADC1 while ADC2 is converting (and vice versa).
+    ADC_TypeDef* sibling = (adc == ADC1) ? ADC2 : ADC1;
+    InlineCurrentSenseSTM32G4* sibling_prepared =
+        (adc == ADC1) ? g_adc2_hw_prepared : g_adc1_hw_prepared;
+    _quiesceAllAdc12();
+    _disableAdcIfEnabled(sibling);
+    _pauseMasterTim(master->Instance);
+    const bool cal_ok = (HAL_ADCEx_Calibration_Start(&adc_handle, ADC_SINGLE_ENDED) == HAL_OK);
+    _resumeMasterTim(master->Instance);
+    if (!cal_ok) {
+        Serial.println("CS: ERR: ADC self-calibration failed");
+        return false;
+    }
+    master_tim_ = master->Instance;
+    _applyRegularTriggerToLL(adc_handle.Instance, master->Instance);
+    _ensureUnlimitedDma(adc_handle.Instance);
+    if (adc == ADC1) {
+        g_adc1_hw_prepared = this;
+    } else if (adc == ADC2) {
+        g_adc2_hw_prepared = this;
+    }
+    if (sibling_prepared != NULL) {
+        sibling_prepared->_reapplyHardwareTrigger();
+    }
+    _logHardwareConfig(pinA, pinB, adc, master, pn_a, pn_b);
+    return true;
+}
+bool InlineCurrentSenseSTM32G4::_initSoftware(PinName pn_a, PinName pn_b, ADC_TypeDef* adc) {
+    _tearDownDma(this, adc_handle, hdma);
+    _resetAdcHandle(adc_handle, adc);
+    adc_handle.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+    adc_handle.Init.Resolution = ADC_RESOLUTION_12B;
+    adc_handle.Init.ScanConvMode = ADC_SCAN_ENABLE;
+    adc_handle.Init.ContinuousConvMode = DISABLE;
+    adc_handle.Init.LowPowerAutoWait = DISABLE;
+    adc_handle.Init.GainCompensation = 0;
+    adc_handle.Init.DiscontinuousConvMode = DISABLE;
+    adc_handle.Init.NbrOfDiscConversion = 1;
+    adc_handle.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+    adc_handle.Init.NbrOfConversion = 2;
+    adc_handle.Init.SamplingMode = ADC_SAMPLING_MODE_NORMAL;
+    adc_handle.Init.OversamplingMode = DISABLE;
+    _applySoftwareAdcFields(adc_handle);
     if (HAL_ADC_Init(&adc_handle) != HAL_OK) {
         Serial.print("CS: ERR: HAL_ADC_Init failed, err=0x");
         Serial.println(adc_handle.ErrorCode, HEX);
@@ -253,41 +424,157 @@ bool InlineCurrentSenseSTM32G4::init(bool hardware_trigger) {
         Serial.println("CS: ERR: ADC self-calibration failed");
         return false;
     }
-    if (hardware_dma_) {
-        if (!_configureDmaForAdc(adc_handle, hdma) ||
-            HAL_ADC_Start_DMA(&adc_handle, (uint32_t*)sample_buf, 2) != HAL_OK) {
-            Serial.println("CS: WARN: TRGO+DMA failed; falling back to software scan");
-            hardware_dma_ = false;
-            _tearDownDma(adc_handle, hdma);
-            _resetAdcHandle(adc_handle, adc);
-            _applySoftwareAdcFields(adc_handle);
-            if (HAL_ADC_Init(&adc_handle) != HAL_OK) {
-                Serial.println("CS: ERR: software fallback HAL_ADC_Init failed");
-                return false;
-            }
-            if (!_configureAdcChannels(adc_handle, pn_a, pn_b, adc)) {
-                return false;
-            }
-            if (HAL_ADCEx_Calibration_Start(&adc_handle, ADC_SINGLE_ENDED) != HAL_OK) {
-                Serial.println("CS: ERR: software fallback calibration failed");
-                return false;
-            }
+    Serial.print("CS: software scan on ADC");
+    Serial.print((adc == ADC1) ? 1 : (adc == ADC2) ? 2 : 0);
+    Serial.print(" rank1=IN");
+    Serial.print((int)__LL_ADC_CHANNEL_TO_DECIMAL_NB(_adcChannelForPin(pn_a, adc)));
+    Serial.print(" rank2=IN");
+    Serial.println((int)__LL_ADC_CHANNEL_TO_DECIMAL_NB(_adcChannelForPin(pn_b, adc)));
+    return true;
+}
+bool InlineCurrentSenseSTM32G4::startDma() {
+    if (!hardware_dma_ || !initialised || dma_running_ || adc_handle.Instance == NULL) {
+        return dma_running_;
+    }
+    if (master_tim_ == NULL) {
+        Serial.println("CS: ERR: startDma with no master timer");
+        return false;
+    }
+    if ((master_tim_->CR2 & TIM_CR2_MMS_Msk) != LL_TIM_TRGO_UPDATE) {
+        const uint32_t trgo_mms = (master_tim_->CR2 >> TIM_CR2_MMS_Pos) & 0x7U;
+        Serial.print("CS: ERR: master TIM");
+        Serial.print(stm32_getTimerNumber(master_tim_));
+        Serial.print(" TRGO MMS=");
+        Serial.print(trgo_mms);
+        Serial.println(" (expected UPDATE)");
+        return false;
+    }
+    PinName pn_a = analogInputToPinName(pinA);
+    PinName pn_b = analogInputToPinName(pinB);
+    if (pn_a != NC && pn_b != NC && adc_handle.Instance != NULL) {
+        if (!_adcPinInitForAdc(pn_a, adc_handle.Instance) || !_adcPinInitForAdc(pn_b, adc_handle.Instance)) {
+            Serial.println("CS: ERR: analog pin init failed before DMA start");
+            return false;
         }
     }
-    if (hardware_dma_) {
-        Serial.print("CS: TRGO+DMA on ADC");
-        Serial.print((adc == ADC1) ? 1 : (adc == ADC2) ? 2 : 0);
-        Serial.print(", master TIM");
+    sample_buf[0] = 0;
+    sample_buf[1] = 0;
+    adc_conv_count_ = 0;
+    tim_update_count_ = 0;
+    _registerDmaOwner(this, &hdma);
+    if (HAL_ADC_Start_DMA(&adc_handle, (uint32_t*)sample_buf, 2) != HAL_OK) {
+        Serial.print("CS: ERR: HAL_ADC_Start_DMA failed, err=0x");
+        Serial.println(adc_handle.ErrorCode, HEX);
+        _unregisterDmaOwner(this, &hdma);
+        return false;
+    }
+    _ensureUnlimitedDma(adc_handle.Instance);
+    __HAL_ADC_CLEAR_FLAG(&adc_handle, ADC_FLAG_EOC | ADC_FLAG_EOS | ADC_FLAG_OVR);
+    dma_running_ = true;
+    return true;
+}
+bool InlineCurrentSenseSTM32G4::commitDualDmaStart(
+    InlineCurrentSenseSTM32G4& a,
+    InlineCurrentSenseSTM32G4& b
+) {
+    // Start the second argument first so ADC1 (typically motor Y) claims DMA1 Ch1
+    // before ADC2 starts on Ch2 — avoids Ch1 init while Ch2 is already streaming.
+    if (!b.startDma()) {
+        Serial.println("CS: ERR: dual DMA start failed on second instance");
+        return false;
+    }
+    if (!a.startDma()) {
+        Serial.println("CS: ERR: dual DMA start failed on first instance");
+        b._stopDmaConversions();
+        return false;
+    }
+    a._reapplyHardwareTrigger();
+    b._reapplyHardwareTrigger();
+    return true;
+}
+void InlineCurrentSenseSTM32G4::_stopDmaConversions() {
+    if (!dma_running_ || adc_handle.Instance == NULL) return;
+    HAL_ADC_Stop_DMA(&adc_handle);
+    _unregisterDmaOwner(this, &hdma);
+    dma_running_ = false;
+}
+bool InlineCurrentSenseSTM32G4::init(bool hardware_trigger, bool defer_dma_start) {
+    PinName pn_a = analogInputToPinName(pinA);
+    PinName pn_b = analogInputToPinName(pinB);
+    if (pn_a == NC || pn_b == NC) {
+        Serial.println("CS: ERR: current sense pin is not an analog pin");
+        return false;
+    }
+    ADC_TypeDef* adc = _findCommonADC(pn_a, pn_b);
+    if (adc == nullptr) {
+        Serial.println("CS: ERR: no common ADC for the current sense pins");
+        return false;
+    }
+    _quiesceAllAdc12();
+    _adcClockEnable(adc);
+    _ensureAdcIndependent(adc);
+    if (!_adcPinInitForAdc(pn_a, adc) || !_adcPinInitForAdc(pn_b, adc)) {
+        Serial.print("CS: ERR: GPIO analog init failed for pins ");
+        Serial.print(pinA);
+        Serial.print("/");
+        Serial.println(pinB);
+        return false;
+    }
+
+    if (!hardware_trigger) {
+        hardware_dma_ = false;
+        master_tim_ = NULL;
+        dma_running_ = false;
+        if (!_initSoftware(pn_a, pn_b, adc)) {
+            return false;
+        }
+        initialised = true;
+        return true;
+    }
+
+    TIM_HandleTypeDef* master = driver.getMasterTimerHandle();
+    if (master == NULL) {
+        Serial.println("CS: ERR: no master timer from PWM driver");
+        return false;
+    }
+    const uint32_t trgo = _timerToRegularTRGO(master->Instance);
+    if (trgo == 0xFFFFFFFF) {
+        Serial.print("CS: ERR: no regular TRGO for master TIM");
         Serial.println(stm32_getTimerNumber(master->Instance));
-    } else {
-        Serial.print("CS: software scan on ADC");
-        Serial.print((adc == ADC1) ? 1 : (adc == ADC2) ? 2 : 0);
-        Serial.print(" rank1=IN");
-        Serial.print((int)__LL_ADC_CHANNEL_TO_DECIMAL_NB(_adcChannelForPin(pn_a, adc)));
-        Serial.print(" rank2=IN");
-        Serial.println((int)__LL_ADC_CHANNEL_TO_DECIMAL_NB(_adcChannelForPin(pn_b, adc)));
+        return false;
+    }
+    hardware_dma_ = true;
+    dma_running_ = false;
+    if (!_prepareHardware(pn_a, pn_b, adc, master, trgo)) {
+        hardware_dma_ = false;
+        return false;
     }
     initialised = true;
+    if (defer_dma_start) {
+        return true;
+    }
+    if (!startDma()) {
+        Serial.println("CS: ERR: TRGO+DMA start failed");
+        initialised = false;
+        hardware_dma_ = false;
+        _tearDownDma(this, adc_handle, hdma);
+        return false;
+    }
+    printHardwareDiagnostics();
+    return true;
+}
+bool InlineCurrentSenseSTM32G4::validateDmaSampling(uint32_t settle_ms) const {
+    if (!hardware_dma_ || !dma_running_) return false;
+    const uint32_t c0 = adc_conv_count_;
+    delay(settle_ms);
+    if (adc_conv_count_ <= c0) return false;
+    return (sample_buf[0] > 500U || sample_buf[1] > 500U);
+}
+bool InlineCurrentSenseSTM32G4::benchPollOnce(uint16_t* rawA, uint16_t* rawB) {
+    if (!initialised || dma_running_) return false;
+    if (!_pollSampleBuf()) return false;
+    if (rawA != nullptr) *rawA = sample_buf[0];
+    if (rawB != nullptr) *rawB = sample_buf[1];
     return true;
 }
 void InlineCurrentSenseSTM32G4::calibrateOffsets(int rounds) {
@@ -325,9 +612,86 @@ DQCurrent_s InlineCurrentSenseSTM32G4::getFOCCurrents(float angle_el) {
 }
 bool InlineCurrentSenseSTM32G4::readRawCodes(uint16_t& rawA, uint16_t& rawB) {
     if (!initialised) return false;
+    if (hardware_dma_ && master_tim_ != NULL) {
+        if (LL_TIM_IsActiveFlag_UPDATE(master_tim_)) {
+            LL_TIM_ClearFlag_UPDATE(master_tim_);
+            tim_update_count_++;
+        }
+    }
     if (!hardware_dma_ && !_pollSampleBuf()) return false;
     rawA = sample_buf[0];
     rawB = sample_buf[1];
     return true;
+}
+void InlineCurrentSenseSTM32G4::setAdcConvProbePin(int pin) {
+    probe_pin_ = pin;
+    if (pin >= 0) {
+        pinMode(pin, OUTPUT);
+        digitalWrite(pin, LOW);
+    }
+}
+void InlineCurrentSenseSTM32G4::notifyConvComplete() {
+    adc_conv_count_++;
+    if (probe_pin_ >= 0) {
+        digitalWrite(probe_pin_, digitalRead(probe_pin_) ? LOW : HIGH);
+    }
+}
+uint16_t InlineCurrentSenseSTM32G4::getDmaNdtr() const {
+    if (!hardware_dma_ || hdma.Instance == NULL) return 0;
+    return __HAL_DMA_GET_COUNTER(&hdma);
+}
+bool InlineCurrentSenseSTM32G4::isAdcOverrun() const {
+    if (adc_handle.Instance == NULL) return false;
+    return __HAL_ADC_GET_FLAG(&adc_handle, ADC_FLAG_OVR) != RESET;
+}
+uint32_t InlineCurrentSenseSTM32G4::getAdcConvCount() const {
+    return adc_conv_count_;
+}
+uint32_t InlineCurrentSenseSTM32G4::getTimUpdateCount() const {
+    return tim_update_count_;
+}
+void InlineCurrentSenseSTM32G4::printHardwareDiagnostics() const {
+    if (!hardware_dma_ || adc_handle.Instance == NULL) return;
+    const uint32_t cfgr = adc_handle.Instance->CFGR;
+    const uint32_t cr = adc_handle.Instance->CR;
+    const uint32_t cr1 = (master_tim_ != NULL) ? master_tim_->CR1 : 0;
+    const uint32_t cr2 = (master_tim_ != NULL) ? master_tim_->CR2 : 0;
+    Serial.print("CS: diag CFGR=0x");
+    Serial.print(cfgr, HEX);
+    Serial.print(" ADSTART=");
+    Serial.print((cr & ADC_CR_ADSTART) ? 1 : 0);
+    Serial.print(" DMA=");
+    Serial.print((cfgr & (ADC_CFGR_DMAEN | ADC_CFGR_DMACFG)) >> ADC_CFGR_DMAEN_Pos);
+    Serial.print(" running=");
+    Serial.print(dma_running_ ? 1 : 0);
+    Serial.print(" TIM CR1=0x");
+    Serial.print(cr1, HEX);
+    Serial.print(" CR2=0x");
+    Serial.print(cr2, HEX);
+    Serial.print(" buf=");
+    Serial.print(sample_buf[0]);
+    Serial.print(",");
+    Serial.print(sample_buf[1]);
+    Serial.print(" DR=");
+    Serial.print((uint16_t)LL_ADC_REG_ReadConversionData12(adc_handle.Instance));
+    Serial.print(" SQR1=0x");
+    Serial.print(adc_handle.Instance->SQR1, HEX);
+    if (hdma.Instance != NULL) {
+        Serial.print(" CMAR=0x");
+        Serial.print((uint32_t)hdma.Instance->CMAR, HEX);
+        Serial.print(" buf@=0x");
+        Serial.print((uint32_t)(uintptr_t)sample_buf, HEX);
+    }
+    Serial.println();
+}
+extern "C" void DMA1_Channel1_IRQHandler(void) {
+    if (g_dma1_ch1_hdma != NULL) HAL_DMA_IRQHandler(g_dma1_ch1_hdma);
+}
+extern "C" void DMA1_Channel2_IRQHandler(void) {
+    if (g_dma1_ch2_hdma != NULL) HAL_DMA_IRQHandler(g_dma1_ch2_hdma);
+}
+extern "C" void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+    InlineCurrentSenseSTM32G4* owner = _ownerForAdc(hadc != NULL ? hadc->Instance : NULL);
+    if (owner != NULL) owner->notifyConvComplete();
 }
 #endif // STM32G4xx
