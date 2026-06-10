@@ -42,6 +42,26 @@
 #define TARGET_1_SET_CMD 0b00010000
 #define TARGET_2_SET_CMD 0b00010100
 
+// Outgoing binary FOC status packet header (0xAA, distinct from DataStream's 0x55)
+#define FOC_STATUS_HEADER 0b10101010
+
+#pragma pack(push, 1)
+struct FOCStatusPacket {
+    uint8_t header;           // FOC_STATUS_HEADER
+    uint8_t motor;            // motor number (1 or 2)
+    float angle;              // mechanical angle [rad]
+    float raw_velocity;       // unfiltered angular velocity [rad/s]
+    float filtered_velocity;  // filtered angular velocity [rad/s]
+    float target_angle;       // [rad]
+    float target_velocity;    // [rad/s]
+    float angular_error;      // [rad]
+    float velocity_error;     // [rad/s]
+    float target_iq;          // [A]
+    float requested_vq;       // [V]
+    float measured_iq;        // [A] (zero until current sensing is implemented)
+};
+#pragma pack(pop)
+
 
 class Interface {
 public:
@@ -58,6 +78,7 @@ public:
     void commandListener();
     void printStatus();
     void printFOCStatus(FOCController& focController, Sensor& sensor);
+    void sendFOCStatus(FOCController& focController, Sensor& sensor);
     
 private:
     void handleDisableEnable();

@@ -15,18 +15,39 @@ void Interface::printFOCStatus(FOCController& focController, Sensor& sensor) {
     if (!stateMachine.enabled) return;
     float target_angle = -focController.getTargetAngle();
 
-    Serial.print("Mech angle: " + String(focController.getMechanicalAngle(), 3));
-    Serial.print(" | E angle: " + String(focController.getElectricalAngle(), 3));
-    // Serial.print(" | Target A: " + String(focController.getTargetAngle(), 3));
+    Serial.print("Mech A: " + String(focController.getMechanicalAngle(), 3));
+    Serial.print(" | Elec A: " + String(focController.getElectricalAngle(), 3));
+    Serial.print(" | Tgt A: " + String(focController.getTargetAngle(), 3));
     Serial.print(" | A err: " + String(focController.getAngularError(), 3));
-    // Serial.print(" | Raw Vel: " + String(sensor.getRawAngularVelocity(), 3));
-    // Serial.print(" | Fil Vel: " + String(focController.getAngularVelocity(), 3));
-    // Serial.print("  |  Target V: " + String(focController.getTargetVelocity(), 3));
+    Serial.print(" | Raw V: " + String(sensor.getRawAngularVelocity(), 3));
+    Serial.print(" | Fil V: " + String(focController.getAngularVelocity(), 3));
+    Serial.print(" | Tgt V: " + String(focController.getTargetVelocity(), 3));
     Serial.print(" | V err: " + String(focController.getVelocityError(), 3));
     Serial.print(" | Tgt Iq: " + String(focController.getTargetQCurrent(), 3));
-    // Serial.print("  |  Vq: " + String(focController.getVq(), 3));
+    Serial.print("  |  Vq: " + String(focController.getVq(), 3));
     // Serial.print("  |  LDM distance: " + String(ldm.getLatestDistance()));
     Serial.println();
+}
+
+void Interface::sendFOCStatus(FOCController& focController, Sensor& sensor) {
+    if (!stateMachine.enabled) return;
+
+    FOCStatusPacket packet = {
+        FOC_STATUS_HEADER,
+        static_cast<uint8_t>(focController.motor_number),
+        focController.getMechanicalAngle(),
+        sensor.getRawAngularVelocity(),
+        focController.getAngularVelocity(),
+        focController.getTargetAngle(),
+        focController.getTargetVelocity(),
+        focController.getAngularError(),
+        focController.getVelocityError(),
+        focController.getTargetQCurrent(),
+        focController.getVq(),
+        focController.getMeasuredQCurrent()
+    };
+
+    Serial.write((uint8_t*)&packet, sizeof(packet));
 }
 
 void Interface::commandListener() {

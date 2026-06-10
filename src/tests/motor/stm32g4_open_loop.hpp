@@ -31,8 +31,8 @@ inline void stm32g4_open_loop() {
     float elec_angle_y = 0.0f;
     float Vd_x = 0.0f;
     float Vd_y = 0.0f;
-    float Vq_x = 2.5f;
-    float Vq_y = 5.0f;
+    float Vq_x = 0.0f;
+    float Vq_y = 10.0f;
     
     focControllerX.setElectricalAngle(elec_angle_x);
     focControllerY.setElectricalAngle(elec_angle_y);
@@ -41,7 +41,7 @@ inline void stm32g4_open_loop() {
     focControllerX.setVq(Vq_x);
     focControllerY.setVq(Vq_y);
 
-    float elec_inc = 0.001f;
+    float elec_inc = 0.01f;
 
     while (true) {
         elec_angle_x += elec_inc;
@@ -54,7 +54,7 @@ inline void stm32g4_open_loop() {
         focControllerY.setPhaseVoltage();
 
         delayMicroseconds(50);
-        elec_inc += 0.00001f;
+        // elec_inc += 0.00001f;
 
         static long lastTime = millis();
         if (millis() - lastTime > 500) {

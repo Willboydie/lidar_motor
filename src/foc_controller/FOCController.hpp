@@ -36,6 +36,8 @@ public:
     float getTargetVelocity() { return target_velocity; }
     float getTargetQCurrent() { return target_q_current; }
     float getTargetDCurrent() { return target_d_current; }
+    float getMeasuredQCurrent() { return Iq; }  // TODO: derive from Ia/Ib/Ic once current sensing is implemented
+    float getMeasuredDCurrent() { return Id; }
     float getVq() { return Vq; }
     float getVd() { return Vd; }
     float getMechanicalOffset() { return motor_electrical_offset; }

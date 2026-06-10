@@ -55,11 +55,14 @@
 
 #define ACCEL_LIMIT 1000.0f
 
+// Telemetry
+#define FOC_STATUS_PERIOD_MS 5 // period of binary FOCStatusPacket stream to the UI
+
 // FOC Timing
 // #define ANGLE_LOOP_HZ     50000
 // #define VELOCITY_LOOP_HZ   50000
 // #define CURRENT_LOOP_HZ   50000
-#define SENSOR_UPDATE_DT_US 20 // the update rate of the AS5048, 11250Hz
+#define SENSOR_UPDATE_DT_US 5 // the update rate of the AS5048, 11250Hz
 #define VELOCITY_ESTIMATION_DT_US 89
 #define VELOCITY_ESTIMATE_N (VELOCITY_ESTIMATION_DT_US / SENSOR_UPDATE_DT_US)
 

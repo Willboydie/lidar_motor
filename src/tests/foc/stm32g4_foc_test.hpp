@@ -29,6 +29,7 @@ inline void stm32g4_foc_test() {
     Serial.begin(BAUD_RATE);
     delay(2000);
     focControllerX.init();
+    focControllerY.init();
     Serial.println("System initialised.");
 
     while (true) {
@@ -36,9 +37,12 @@ inline void stm32g4_foc_test() {
         if (millis() - cmdTime > 200) {
             cmdTime = millis();
             interface.commandListener();
-            if ( stateMachine.enabled ) {
-            interface.printFOCStatus(focControllerX, sensorX);
-            }
+        }
+
+        static unsigned long statusTime = millis();
+        if (millis() - statusTime >= FOC_STATUS_PERIOD_MS) {
+            statusTime = millis();
+            interface.sendFOCStatus(focControllerX, sensorX);
         }
 
         if ( stateMachine.enabled ) {

@@ -3,8 +3,6 @@
 // constexpr int32_t _3adapted_cpr_4 = (3 * ADAPTED_CPR) / 4;
 // constexpr int32_t adapted_cpr = ADAPTED_CPR;
 // constexpr unsigned int N = VELOCITY_ESTIMATE_N;
-
-constexpr float _3pi_over_4 = 3.0f * _PI_4;
 constexpr float _2pi = _2PI;
 constexpr float dt = static_cast<float>(SENSOR_UPDATE_DT_US) * 1e-6f;
 
