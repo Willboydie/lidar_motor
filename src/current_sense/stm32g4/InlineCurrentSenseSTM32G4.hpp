@@ -1,34 +1,19 @@
 // Inline current sense for STM32G4 + SimpleFOC Shield 3.2 (ACS712).
 // Target architecture: docs/STM32G4_upgrade_plan copy.md §3.
 //
-// Standalone class — does NOT inherit from imported SimpleFOC CurrentSense.
+// Hardware backend of InlineCurrentSense: TRGO + DMA ADC sampling on the G4.
 #pragma once
 
 #include "Arduino.h"
+#include "../InlineCurrentSense.hpp"
 
 #if defined(STM32G4xx)
 
 #include "stm32g4xx_hal.h"
 
-struct PhaseCurrent_s {
-    float a;
-    float b;
-    float c;
-};
-
-struct ABCurrent_s {
-    float alpha;
-    float beta;
-};
-
-struct DQCurrent_s {
-    float d;
-    float q;
-};
-
 class PWMDriverSTM32G4;
 
-class InlineCurrentSenseSTM32G4 {
+class InlineCurrentSenseSTM32G4 : public InlineCurrentSense {
 public:
     InlineCurrentSenseSTM32G4(float mVpA, int pinA, int pinB, PWMDriverSTM32G4& driver);
 
@@ -39,8 +24,7 @@ public:
     static bool commitDualDmaStart(InlineCurrentSenseSTM32G4& a, InlineCurrentSenseSTM32G4& b);
 
     void calibrateOffsets(int rounds = 1000);
-    PhaseCurrent_s getPhaseCurrents(); // non-blocking buffer read (§3.4)
-    DQCurrent_s getFOCCurrents(float angle_el);
+    PhaseCurrent_s getPhaseCurrents() override; // non-blocking buffer read (§3.4)
 
     // Stage 7 bench helper: refresh software buffer or read latest DMA sample.
     bool readRawCodes(uint16_t& rawA, uint16_t& rawB);
@@ -67,13 +51,6 @@ public:
 
     // Called from HAL_ADC_ConvCpltCallback (same translation unit).
     void notifyConvComplete();
-
-    float gain_a;
-    float gain_b;
-    float gain_c;
-    float offset_ia;
-    float offset_ib;
-    float offset_ic;
 
     static constexpr float adc_voltage_conv = 3.3f / 4096.0f;
 

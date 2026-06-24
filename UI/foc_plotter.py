@@ -1,17 +1,17 @@
 """
 FOC Realtime Plotter
-Qt (PySide6 + pyqtgraph) tool that receives binary FOCStatusPacket telemetry
-from the firmware (see `Interface::sendFOCStatus`) and plots selected channels
-in real time for tuning and debugging. One or both motors can be overlaid on
-the same axes (M1 solid, M2 dashed).
+Qt (PySide6 + pyqtgraph) tool that receives binary DualMotorStatusPacket
+telemetry from the firmware (see `Interface::sendDualMotorStatus`) and plots
+selected channels in real time for tuning and debugging. Both motors arrive in
+one packet and can be overlaid on the same axes (M1 solid, M2 dashed).
 
-Packet layout (little-endian, packed, 66 bytes):
+Packet layout (little-endian, packed, 97 bytes):
     uint8  header   (0xAA)
-    uint8  motor    (1 or 2)
-    float  angle, raw_velocity, filtered_velocity, target_angle,
-           target_velocity, angular_error, velocity_error,
-           target_iq, requested_vq, measured_iq,
-           raw_adc_a, raw_adc_b, amps_a, amps_b, volts_a, volts_b
+    MotorStatus m1  (12 floats: ia, ib, ic, id, iq, raw_angle, elec_angle, cmd_elec_angle, angular_error, va, vb, vc)
+    MotorStatus m2  (12 floats: same order)
+All MotorStatus fields are normalised to [-1, 1] on the wire (currents by
+MOTOR_CURRENT_LIMIT, angles by 2*pi, angular error by pi, voltages by supply V).
+The plotter denormalises to physical units before display.
 
 Any non-packet bytes (e.g. Serial.println text from the firmware) are decoded
 and shown in the log panel at the bottom.
@@ -21,11 +21,13 @@ Usage:
     python foc_plotter.py
 """
 
+import json
 import struct
 import sys
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
@@ -35,41 +37,179 @@ from PySide6 import QtCore, QtWidgets
 
 # ---------- Protocol (mirrors src/interface/Interface.hpp) ----------
 FOC_STATUS_HEADER = 0xAA  # 0b10101010
-PACKET_STRUCT = struct.Struct("<BB16f")
-PACKET_SIZE = PACKET_STRUCT.size  # 66 bytes
+# header byte + 2 x MotorStatus (12 floats each)
+PACKET_STRUCT = struct.Struct("<B24f")
+PACKET_SIZE = PACKET_STRUCT.size  # 97 bytes
 VALID_MOTORS = (1, 2)
-# values[10] and values[11] are raw_adc_a / raw_adc_b after the 10 motion floats
-RAW_ADC_A_INDEX = 10
-RAW_ADC_B_INDEX = 11
-MIN_PLAUSIBLE_RAW_ADC = 200
-MAX_PLAUSIBLE_RAW_ADC = 4000
+FLOATS_PER_MOTOR = 12
+# Fields are normalised to [-1, 1]; allow a small margin for resync validation.
+MAX_PLAUSIBLE_VALUE = 1.5
+
+# Denominators used by makeNormalisedMotorStatus() — multiply packet values to
+# recover physical units before plotting.
+MOTOR_CURRENT_LIMIT = 0.8
+VOLTAGE_POWER_SUPPLY = 12.0
+_PI = np.pi
+_TWO_PI = 2.0 * np.pi
+
+# Channel index constants — order matches MotorStatus in Interface.hpp
+CH_IA, CH_IB, CH_IC = 0, 1, 2
+CH_ID, CH_IQ = 3, 4
+CH_RAW_ANGLE, CH_ELEC_ANGLE, CH_CMD_ELEC_ANGLE, CH_ANGLE_ERROR = 5, 6, 7, 8
+CH_VA, CH_VB, CH_VC = 9, 10, 11
+
+CHANNEL_DENORM = (
+    MOTOR_CURRENT_LIMIT,
+    MOTOR_CURRENT_LIMIT,
+    MOTOR_CURRENT_LIMIT,
+    MOTOR_CURRENT_LIMIT,
+    MOTOR_CURRENT_LIMIT,
+    _TWO_PI,
+    _TWO_PI,
+    _TWO_PI,
+    _PI,
+    VOLTAGE_POWER_SUPPLY,
+    VOLTAGE_POWER_SUPPLY,
+    VOLTAGE_POWER_SUPPLY,
+)
 
 DEFAULT_BAUD = 460800
 
 MOTOR_LABELS = {1: "M1", 2: "M2"}
 
-# (name, unit, default pen colour, plotted by default)
+# (name, unit, default pen colour, plotted by default) — order matches MotorStatus
 CHANNELS = [
-    ("Angle",             "rad",   "#ffd700", False),
-    ("Raw Velocity",      "rad/s", "#666688", False),
-    ("Filtered Velocity", "rad/s", "#00bfff", False),
-    ("Target Angle",      "rad",   "#ff8c00", False),
-    ("Target Velocity",   "rad/s", "#1e90ff", False),
-    ("Angular Error",     "rad",   "#ff4444", False),
-    ("Velocity Error",    "rad/s", "#ff44ff", False),
-    ("Target Iq",         "A",     "#44ff44", False),
-    ("Requested Vq",      "V",     "#44ffff", False),
-    ("Measured Iq",       "A",     "#aaff00", False),
-    ("Raw ADC A",         "LSB",   "#c080ff", True),
-    ("Raw ADC B",         "LSB",   "#8080ff", True),
-    ("Amps A",            "A",     "#ff8844", True),
-    ("Amps B",            "A",     "#ff6688", True),
-    ("Volts A",           "V",     "#88ffcc", True),
-    ("Volts B",           "V",     "#66ccff", True),
+    ("Ia",          "A",   "#ff8844", True),
+    ("Ib",          "A",   "#ff6688", True),
+    ("Ic",          "A",   "#ffaa44", True),
+    ("Id",          "A",   "#44ff44", False),
+    ("Iq",          "A",   "#aaff00", False),
+    ("Raw Angle",   "rad", "#ffd700", True),
+    ("Elec Angle",  "rad", "#ffa500", True),
+    ("Cmd Elec Angle", "rad", "#ff8800", True),
+    ("Angle Error", "rad", "#ff66ff", True),
+    ("Va",          "V",   "#44ffff", True),
+    ("Vb",          "V",   "#88ffcc", True),
+    ("Vc",          "V",   "#66ccff", True),
 ]
 NUM_CHANNELS = len(CHANNELS)
 
 HISTORY_SAMPLES = 30000  # ~150 s at 200 Hz
+
+# #region agent log
+GM2804_POLE_PAIRS = 7
+DEBUG_LOG_PATH = Path(__file__).resolve().parent.parent / "debug-107e68.log"
+DEBUG_SESSION_ID = "107e68"
+RAW_ANGLE_CH = CH_RAW_ANGLE
+ELEC_ANGLE_CH = CH_ELEC_ANGLE
+ANGLE_ERROR_CH = CH_ANGLE_ERROR
+
+
+def _unwrap_delta(a: float, b: float) -> float:
+    """Shortest signed angular delta a - b in radians."""
+    return float((a - b + np.pi) % (2.0 * np.pi) - np.pi)
+
+
+class DebugAngleLogger:
+    """NDJSON logger for open-loop angle debugging (session 107e68)."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._prev_packet: dict[int, tuple[float, float, float]] = {}
+        self._packet_count = 0
+
+    def _write(self, payload: dict) -> None:
+        payload.setdefault("sessionId", DEBUG_SESSION_ID)
+        payload.setdefault("timestamp", int(time.time() * 1000))
+        line = json.dumps(payload, separators=(",", ":"))
+        with self._lock:
+            with DEBUG_LOG_PATH.open("a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+
+    def log_packet(self, motor: int, timestamp: float, values: tuple) -> None:
+        self._packet_count += 1
+        if self._packet_count % 3 != 0:
+            return
+
+        mech = float(values[RAW_ANGLE_CH]) * _TWO_PI
+        elec = float(values[ELEC_ANGLE_CH]) * _TWO_PI
+        angle_err = float(values[ANGLE_ERROR_CH]) * _PI
+        prev = self._prev_packet.get(motor)
+        if prev is not None:
+            prev_mech, prev_elec, prev_ts = prev
+            dt = timestamp - prev_ts
+            d_mech = _unwrap_delta(mech, prev_mech)
+            d_elec = _unwrap_delta(elec, prev_elec)
+            mech_rate = d_mech / dt if dt > 0 else 0.0
+            elec_rate = d_elec / dt if dt > 0 else 0.0
+            rate_ratio = (mech_rate / elec_rate) if abs(elec_rate) > 1e-6 else None
+            expected_ratio = 1.0 / GM2804_POLE_PAIRS
+            elec_from_mech = (mech * GM2804_POLE_PAIRS) % _TWO_PI
+            align_err = _unwrap_delta(elec, elec_from_mech)
+            near_wrap = (mech < 0.15) or (mech > _TWO_PI - 0.15) or (elec < 0.15) or (
+                elec > _TWO_PI - 0.15
+            )
+            jump = abs(d_mech) > 0.04 and abs(d_elec) < 0.08
+            quant_step = _TWO_PI / 16384.0
+            quant_like = abs(abs(d_mech) - quant_step) < quant_step * 0.35
+
+            self._write(
+                {
+                    "runId": "pre-fix",
+                    "hypothesisId": "H1-H5",
+                    "location": "foc_plotter.py:log_packet",
+                    "message": "angle_packet",
+                    "data": {
+                        "motor": motor,
+                        "mech_rad": round(mech, 5),
+                        "elec_rad": round(elec, 5),
+                        "angle_err_rad": round(angle_err, 5),
+                        "d_mech": round(d_mech, 6),
+                        "d_elec": round(d_elec, 6),
+                        "mech_rate": round(mech_rate, 4),
+                        "elec_rate": round(elec_rate, 4),
+                        "rate_ratio": round(rate_ratio, 4) if rate_ratio is not None else None,
+                        "expected_rate_ratio": round(expected_ratio, 4),
+                        "align_err_rad": round(align_err, 5),
+                        "near_wrap": near_wrap,
+                        "mech_jump": jump,
+                        "quant_step_like": quant_like,
+                        "dt_s": round(dt, 5),
+                    },
+                }
+            )
+        self._prev_packet[motor] = (mech, elec, timestamp)
+
+    def log_firmware_line(self, line: str) -> None:
+        if not line.startswith("DBG "):
+            return
+        parts = line[4:].split(",")
+        if len(parts) < 6:
+            return
+        try:
+            elec_cmd, mech, elec_est, align_err, d_mech, d_elec = map(float, parts[:6])
+        except ValueError:
+            return
+        self._write(
+            {
+                "runId": "pre-fix",
+                "hypothesisId": "H2",
+                "location": "foc_plotter.py:log_firmware_line",
+                "message": "firmware_alignment",
+                "data": {
+                    "elec_cmd": elec_cmd,
+                    "mech_rad": mech,
+                    "elec_from_sensor": elec_est,
+                    "align_err_rad": align_err,
+                    "d_mech_since_last_dbg": d_mech,
+                    "d_elec_since_last_dbg": d_elec,
+                },
+            }
+        )
+
+
+_DEBUG_ANGLE_LOGGER = DebugAngleLogger()
+# #endregion
 
 
 def _motor_pen(base_colour: str, motor: int):
@@ -146,23 +286,16 @@ class SerialReader(threading.Thread):
                 self._consume_text(idx)
             if len(buf) < PACKET_SIZE:
                 break  # wait for the rest of the packet
-            motor = buf[1]
-            if motor not in VALID_MOTORS:
-                # False header (e.g. 0xAA inside text); skip one byte
-                self._consume_text(1)
-                continue
             fields = PACKET_STRUCT.unpack_from(buf, 0)
-            raw_a = fields[2 + RAW_ADC_A_INDEX]
-            raw_b = fields[2 + RAW_ADC_B_INDEX]
-            if not (
-                MIN_PLAUSIBLE_RAW_ADC <= raw_a <= MAX_PLAUSIBLE_RAW_ADC
-                and MIN_PLAUSIBLE_RAW_ADC <= raw_b <= MAX_PLAUSIBLE_RAW_ADC
-            ):
-                # Misaligned 0xAA — resync one byte at a time
+            values = fields[1:]  # 22 floats: m1 (11) then m2 (11)
+            if not all(abs(v) <= MAX_PLAUSIBLE_VALUE for v in values):
+                # Misaligned 0xAA (e.g. inside text/floats) — resync one byte at a time
                 self._consume_text(1)
                 continue
             del buf[:PACKET_SIZE]
-            self.packet_sink(fields[1], time.monotonic(), fields[2:])
+            ts = time.monotonic()
+            self.packet_sink(1, ts, values[:FLOATS_PER_MOTOR])
+            self.packet_sink(2, ts, values[FLOATS_PER_MOTOR:])
         self._flush_text()
 
     def _consume_text(self, n):
@@ -197,8 +330,8 @@ class MotorHistory:
     def append(self, timestamp, values):
         with self.lock:
             self.times.append(timestamp)
-            for dq, v in zip(self.values, values):
-                dq.append(v)
+            for dq, v, scale in zip(self.values, values, CHANNEL_DENORM):
+                dq.append(v * scale)
             self.packet_count += 1
 
     def clear(self):
@@ -421,6 +554,9 @@ class FOCPlotter(QtWidgets.QMainWindow):
     # ---------- Data ----------
     def _on_packet(self, motor, timestamp, values):
         # Called from the reader thread
+        # #region agent log
+        _DEBUG_ANGLE_LOGGER.log_packet(motor, timestamp, values)
+        # #endregion
         history = self.histories.get(motor)
         if history is not None:
             history.append(timestamp, values)
@@ -502,6 +638,9 @@ class FOCPlotter(QtWidgets.QMainWindow):
 
     # ---------- Log ----------
     def _append_log(self, text):
+        # #region agent log
+        _DEBUG_ANGLE_LOGGER.log_firmware_line(text)
+        # #endregion
         self.log_box.appendPlainText(text)
 
     def closeEvent(self, event):

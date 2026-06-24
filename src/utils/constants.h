@@ -78,8 +78,11 @@
 // Measured by stiction-bracket autocal (harmonic-robust circular mean over a
 // full mech rev). Replaces stale values (1.4240 / 6.1619) that were ~2.66 rad
 // off and caused the estimated field to disagree with the true field.
-#define SENSOR_OFFSET_X  4.0852f // electrical offset in radians
-#define SENSOR_OFFSET_Y 2.5624f
+
+// MOTOR X electrical offset: 1.4245 rad  (-> constants.h SENSOR_OFFSET_1)
+// MOTOR Y electrical offset: 6.1692 rad  (-> constants.h SENSOR_OFFSET_2)
+#define SENSOR_OFFSET_X  4.75f // electrical offset in radians
+#define SENSOR_OFFSET_Y 6.17f
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 

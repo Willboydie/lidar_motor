@@ -17,6 +17,7 @@
 #include "foc_controller/FOCController.hpp"
 #include "sensor/AS5048.hpp"
 #include "pwm_driver/teensy41/PWMDriverTeensy41.hpp"
+#include "current_sense/teensy41/InlineCurrentSenseTeensy41.hpp"
 #include "utils/tweakable_params.h"
 #include "utils/constants.h"
 #include "ldm/GarminV3HP.hpp"
@@ -33,8 +34,10 @@ GM2804 motor1(1, SENSOR_OFFSET_X);
 GM2804 motor2(2, SENSOR_OFFSET_Y);
 FOCController focController1(sensor1, pwmDriver1, motor1);
 FOCController focController2(sensor2, pwmDriver2, motor2);
+InlineCurrentSenseTeensy41 currentSense1;
+InlineCurrentSenseTeensy41 currentSense2;
 SinusoidalScanPath scanPath(THETA_INC, PHI_INC, THETA_AMPLITUDE, PHI_AMPLITUDE, THETA_CENTRE, PHI_CENTRE);
-Interface interface(stateMachine, focController1, focController2, sensor1, sensor2, ldm, scanPath);
+Interface interface(stateMachine, focController1, focController2, sensor1, sensor2, currentSense1, currentSense2, ldm, scanPath);
 DataStream dataStream(focController1, focController2, ldm, scanPath);
 
 void setup() {

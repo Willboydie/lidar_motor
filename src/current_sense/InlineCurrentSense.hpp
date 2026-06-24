@@ -1,51 +1,46 @@
 #pragma once
 
-#include "Arduino.h"
-#include "../common/foc_utils.h"
-#include "../common/time_utils.h"
-#include "../common/defaults.h"
-#include "../common/base_classes/CurrentSense.h"
-#include "../common/base_classes/StepperDriver.h"
-#include "../common/base_classes/BLDCDriver.h"
-#include "../common/lowpass_filter.h"
-#include "hardware_api.h"
+#include "../utils/quick_defs.h"
 
+// Phase and transform current containers shared across current-sense backends.
+struct PhaseCurrent_s {
+    float a;
+    float b;
+    float c;
+};
 
+struct ABCurrent_s {
+    float alpha;
+    float beta;
+};
 
-class InlineCurrentSense: public CurrentSense{
-  public:
-    /**
-      InlineCurrentSense class constructor
-      @param shunt_resistor shunt resistor value
-      @param gain current-sense op-amp gain
-      @param phA A phase adc pin
-      @param phB B phase adc pin
-      @param phC C phase adc pin (optional)
-    */
-    InlineCurrentSense(float shunt_resistor, float gain, int pinA, int pinB, int pinC = NOT_SET);
-    /**
-      InlineCurrentSense class constructor
-      @param mVpA mV per Amp ratio
-      @param phA A phase adc pin
-      @param phB B phase adc pin
-      @param phC C phase adc pin (optional)
-    */
-    InlineCurrentSense(float mVpA, int pinA, int pinB, int pinC = NOT_SET);
+struct DQCurrent_s {
+    float d;
+    float q;
+};
 
-    // CurrentSense interface implementing functions 
-    int init() override;
-    PhaseCurrent_s getPhaseCurrents() override;
+// Hardware-agnostic inline current sense base.
+// Holds the per-phase ADC gains/offsets and the Clarke/Park maths used by FOC.
+// A hardware backend (e.g. InlineCurrentSenseSTM32G4) implements getPhaseCurrents().
+class InlineCurrentSense {
+public:
+    virtual ~InlineCurrentSense() = default;
 
-  private:
-  
-    // gain variables
-    float shunt_resistor; //!< Shunt resistor value
-    float amp_gain; //!< amp gain value
-    float volts_to_amps_ratio; //!< Volts to amps ratio
-    
-    /**
-     *  Function finding zero offsets of the ADC
-     */
-    void calibrateOffsets();
+    // Latest measured phase currents [A]. Implemented by the hardware backend.
+    virtual PhaseCurrent_s getPhaseCurrents() = 0;
 
+    // Clarke transform for two measured phases (assumes ia + ib + ic = 0).
+    ABCurrent_s getABCurrents(PhaseCurrent_s current);
+    // Park transform.
+    DQCurrent_s getDQCurrents(ABCurrent_s current, float angle_el);
+    // Full FOC current read: phase currents -> Clarke -> Park.
+    DQCurrent_s getFOCCurrents(float angle_el);
+
+    // Per-phase ADC gain [A/V] and zero-current offset voltage [V].
+    float gain_a = 0.0f;
+    float gain_b = 0.0f;
+    float gain_c = 0.0f;
+    float offset_ia = 0.0f;
+    float offset_ib = 0.0f;
+    float offset_ic = 0.0f;
 };

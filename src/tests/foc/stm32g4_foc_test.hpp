@@ -6,6 +6,7 @@
 #include "foc_controller/FOCController.hpp"
 #include "sensor/AS5048.hpp"
 #include "pwm_driver/stm32g4/PWMDriverSTM32G4.hpp"
+#include "current_sense/teensy41/InlineCurrentSenseTeensy41.hpp"
 #include "utils/tweakable_params.h"
 #include "utils/constants.h"
 #include "ldm/GarminV3HP.hpp"
@@ -23,8 +24,10 @@ inline void stm32g4_foc_test() {
     GM2804 motorY(2, SENSOR_OFFSET_Y);
     FOCController focControllerX(sensorX, pwmDriverX, motorX);
     FOCController focControllerY(sensorY, pwmDriverY, motorY);
+    InlineCurrentSenseTeensy41 currentSenseX;
+    InlineCurrentSenseTeensy41 currentSenseY;
     SinusoidalScanPath scanPath(THETA_INC, PHI_INC, THETA_AMPLITUDE, PHI_AMPLITUDE, THETA_CENTRE, PHI_CENTRE);
-    Interface interface(stateMachine, focControllerX, focControllerY, sensorX, sensorY, ldm, scanPath);
+    Interface interface(stateMachine, focControllerX, focControllerY, sensorX, sensorY, currentSenseX, currentSenseY, ldm, scanPath);
 
     Serial.begin(BAUD_RATE);
     delay(2000);
@@ -42,7 +45,7 @@ inline void stm32g4_foc_test() {
         static unsigned long statusTime = millis();
         if (millis() - statusTime >= FOC_STATUS_PERIOD_MS) {
             statusTime = millis();
-            interface.sendFOCStatus(focControllerX, sensorX);
+            interface.printFOCStatus(focControllerX, sensorX);
         }
 
         if ( stateMachine.enabled ) {

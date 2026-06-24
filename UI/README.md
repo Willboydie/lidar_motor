@@ -8,7 +8,7 @@ py -3.12 -m venv open3d_env
 pip install open3d
 
 ## FOC realtime plotter
-Plots the binary FOCStatusPacket stream (`Interface::sendFOCStatus`) in real time.
+Plots the binary DualMotorStatusPacket stream (`Interface::sendDualMotorStatus`) in real time.
 Select the COM port, pick a motor and tick the channels you want to see.
 Firmware text output (Serial.println) appears in the log panel at the bottom.
 

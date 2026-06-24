@@ -6,15 +6,14 @@
 
 // no TRGO; PWM driver constructed but never init'ed, so outputs stay off)
 
-// and streams FOCStatusPackets for UI/foc_plotter.py at BAUD_RATE 460800.
+// and streams one DualMotorStatusPacket (data in m1, m2 zero) for UI/foc_plotter.py.
 
 //
 
-// Packet fields (FOCStatusPacket — see Interface.hpp):
-//   raw_adc_a, raw_adc_b  <- raw 12-bit codes [LSB]
-//   amps_a, amps_b        <- nominal phase currents [A]
-//   volts_a, volts_b      <- pin voltages [V]
-//   all motion / Iq fields <- 0
+// Packet fields (DualMotorStatusPacket — see Interface.hpp, normalised [-1,1]):
+//   m1 ia, ib  <- measured phase currents A/B  (ic = -(ia+ib))
+//   all other channels <- 0
+// Raw 12-bit codes / pin volts are reported in the 1 Hz text summary only.
 
 //
 
@@ -34,7 +33,7 @@
 
 
 
-#include "interface/Interface.hpp" // FOCStatusPacket, FOC_STATUS_HEADER
+#include "interface/Interface.hpp" // DualMotorStatusPacket, makeNormalisedMotorStatus
 
 #include "current_sense/stm32g4/InlineCurrentSenseSTM32G4.hpp"
 
@@ -138,20 +137,11 @@ inline void stm32g4_adc_raw_test() {
 
 
 
-            FOCStatusPacket packet = {
-                FOC_STATUS_HEADER,
-                1,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f,
-                (float)rawA,
-                (float)rawB,
-                amps_a,
-                amps_b,
-                volts_a,
-                volts_b,
-            };
-
-            Serial.write((uint8_t*)&packet, sizeof(packet));
+            // Only motor 1 (X) is sensed here; raw codes / pin volts stay in the
+            // 1 Hz text summary. Phase C is reconstructed as -(A+B).
+            const MotorStatus m1 = makeNormalisedMotorStatus(
+                amps_a, amps_b, -(amps_a + amps_b), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+            sendDualMotorStatusPacket(m1, MotorStatus{});
 
 
 

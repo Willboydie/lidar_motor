@@ -1,13 +1,12 @@
 // Stage 8 bench test — ADC hardware-triggered + DMA (docs/STM32G4_upgrade_stages.md).
 //
 // Motor Y: TIM8 master TRGO → ADC1 (PA1/A1 + PB0/A3), DMA1 Ch1.
-// Streams FOCStatusPackets as motor=2 for foc_plotter.py @ 460800.
+// Streams one DualMotorStatusPacket (data in m2, m1 zero) for foc_plotter.py @ 460800.
 //
-// Packet fields (FOCStatusPacket — see Interface.hpp):
-//   raw_adc_a, raw_adc_b  <- raw 12-bit codes [LSB]
-//   amps_a, amps_b        <- nominal phase currents [A]
-//   volts_a, volts_b      <- pin voltages [V]
-//   all motion / Iq fields <- 0
+// Packet fields (DualMotorStatusPacket — see Interface.hpp, normalised [-1,1]):
+//   m2 ia, ib  <- measured phase currents A/B  (ic = -(ia+ib))
+//   all other channels <- 0
+// Raw 12-bit codes / pin volts are reported in the 1 Hz text summary only.
 //
 // Scope TRGO_PROBE_PIN (PB5 / D4) toggles on each ADC DMA sequence complete.
 // (PC7 is motor Y PWM N2 — do not use as probe when running this test.)
@@ -170,19 +169,11 @@ inline void stm32g4_adc_dma_test() {
             const float amps_a = (volts_a - currentSense.offset_ia) * currentSense.gain_a;
             const float amps_b = (volts_b - currentSense.offset_ib) * currentSense.gain_b;
 
-            const FOCStatusPacket packet = {
-                FOC_STATUS_HEADER,
-                2,
-                0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f,
-                (float)rawA,
-                (float)rawB,
-                amps_a,
-                amps_b,
-                volts_a,
-                volts_b,
-            };
-            Serial.write((uint8_t*)&packet, sizeof(packet));
+            // Only motor 2 (Y) is sensed here; raw codes / pin volts stay in the
+            // 1 Hz text summary. Phase C is reconstructed as -(A+B).
+            const MotorStatus m2 = makeNormalisedMotorStatus(
+                amps_a, amps_b, -(amps_a + amps_b), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+            sendDualMotorStatusPacket(MotorStatus{}, m2);
 
             n++;
             sum_a += rawA;

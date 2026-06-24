@@ -94,52 +94,15 @@ void applyOpenLoopVq(PWMDriverSTM32G4& pwm, float elec_angle, float Vq, float Vd
     pwm.setPwm(Va + center, Vb + center, Vc + center);
 }
 
-void streamDualPackets(float angle_x, float Vq_x, float Va_x, float Vb_x, float Vc_x,
-                       float angle_y, float Vq_y, float Va_y, float Vb_y, float Vc_y) {
-    alignas(4) uint8_t wire[2 * sizeof(FOCStatusPacket)];
-    auto* packets = reinterpret_cast<FOCStatusPacket*>(wire);
-
-    packets[0] = {
-        FOC_STATUS_HEADER,
-        1,
-        angle_x,
-        Va_x,
-        Vb_x,
-        0.0f,
-        0.0f,
-        Vc_x,
-        0.0f,
-        0.0f,
-        0.0f,
-        Vq_x,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-    };
-    packets[1] = {
-        FOC_STATUS_HEADER,
-        2,
-        angle_y,
-        Va_y,
-        Vb_y,
-        0.0f,
-        0.0f,
-        Vc_y,
-        0.0f,
-        0.0f,
-        0.0f,
-        Vq_y,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-    };
-    Serial.write(wire, sizeof(wire));
+void streamDualPackets(float angle_x, float Va_x, float Vb_x, float Vc_x,
+                       float angle_y, float Va_y, float Vb_y, float Vc_y) {
+    // No current sensing in this test — ABC/DQ channels stream as zero.
+    // The angle here is the commanded electrical angle (no sensor read).
+    const MotorStatus m1 = makeNormalisedMotorStatus(
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, angle_x, angle_x, 0.0f, Va_x, Vb_x, Vc_x);
+    const MotorStatus m2 = makeNormalisedMotorStatus(
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, angle_y, angle_y, 0.0f, Va_y, Vb_y, Vc_y);
+    sendDualMotorStatusPacket(m1, m2);
 }
 
 void print_master_timer(const char* label, TIM_TypeDef* tim) {
@@ -199,7 +162,7 @@ inline void stm32g4_vq_rotate_trgo_test() {
         + String(kElecRevPeriodSec, 1) + " s)");
     Serial.println("Stage 8.6: PWM X = PA8/PA9/PA10  Y = PC6/PC7/PB9");
     Serial.println("Stage 8.6: TRGO proxy X = PA6 (D12)  Y = PB5 (D4) on TIM UPDATE");
-    Serial.println("Stage 8.6: foc_plotter — Angle, Raw/Filtered Vel (=Va/Vb), Angular Err (=Vc), Requested Vq");
+    Serial.println("Stage 8.6: foc_plotter — Raw Angle + Va/Vb/Vc on both motors");
     Serial.println("Stage 8.6: scope TRGO vs PWM — edge at triangle bottom, fixed phase each period");
 
     float elec_angle = 0.0f;
@@ -236,8 +199,8 @@ inline void stm32g4_vq_rotate_trgo_test() {
         if (millis() - lastPacketMs >= FOC_STATUS_PERIOD_MS) {
             lastPacketMs = millis();
             streamDualPackets(
-                elec_angle, kVq, Va_x, Vb_x, Vc_x,
-                elec_angle, kVq, Va_y, Vb_y, Vc_y
+                elec_angle, Va_x, Vb_x, Vc_x,
+                elec_angle, Va_y, Vb_y, Vc_y
             );
         }
 

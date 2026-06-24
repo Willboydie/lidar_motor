@@ -49,6 +49,8 @@ THETA_CENTRE_SET_CMD = 0b00100101
 PHI_CENTRE_SET_CMD = 0b00100110
 TARGET_1_SET_CMD = 0b00010000
 TARGET_2_SET_CMD = 0b00010100
+ELECTRICAL_OFFSET_1_SET_CMD = 0b00011000
+ELECTRICAL_OFFSET_2_SET_CMD = 0b00011001
 
 # Default values mirrored from `src/utils/tweakable_params.h` and scan path defaults
 DEFAULTS = {
@@ -69,6 +71,8 @@ DEFAULTS = {
     "notch_filter_sample_rate": 10000.0,
     "target_1": 0.0,
     "target_2": 0.0,
+    "electrical_offset_1": 4.75,
+    "electrical_offset_2": 6.17,
     "theta_phase_inc": 1500007,
     "phi_phase_inc": 3200003,
     "theta_amplitude": 0.79,
@@ -304,9 +308,27 @@ class MotorControlUI:
         ttk.Button(target_row2, text="Set", command=self.send_target_2, width=10).grid(row=0, column=2, padx=5)
         target_row2.grid_columnconfigure(1, weight=1)
 
+        # Electrical offset trim (live, per motor)
+        offset_frame = ttk.LabelFrame(right_column, text="Electrical Offset Trim", padding=12)
+        offset_frame.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+
+        self.offset_1_entry = self._add_pid_row(
+            offset_frame, "Motor 1 (rad)", 0, ELECTRICAL_OFFSET_1_SET_CMD, "electrical_offset_1"
+        )
+        self.offset_2_entry = self._add_pid_row(
+            offset_frame, "Motor 2 (rad)", 1, ELECTRICAL_OFFSET_2_SET_CMD, "electrical_offset_2"
+        )
+
+        ttk.Label(
+            offset_frame,
+            text="0–2π rad. Set while FOC is running; persists until reboot.",
+            font=("Arial", 8),
+            foreground="gray",
+        ).grid(row=2, column=0, columnspan=3, pady=(8, 0), sticky="w")
+
         # LDM Configuration
         ldm_frame = ttk.LabelFrame(right_column, text="LDM Configuration", padding=12)
-        ldm_frame.grid(row=2, column=0, sticky="ew")
+        ldm_frame.grid(row=3, column=0, sticky="ew")
         
         ldm_row = ttk.Frame(ldm_frame)
         ldm_row.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))

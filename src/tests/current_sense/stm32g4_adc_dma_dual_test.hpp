@@ -2,13 +2,12 @@
 //
 // Same self-sequenced phases as Stage 8, but motor X and motor Y run in parallel:
 // both PWM drivers + both InlineCurrentSenseSTM32G4 instances (X: TIM1/ADC2, Y: TIM8/ADC1).
-// Streams FOCStatusPackets for motor 1 and motor 2 at 200 Hz each.
+// Streams one DualMotorStatusPacket (both motors) at 200 Hz.
 //
-// Packet fields (FOCStatusPacket — see Interface.hpp):
-//   raw_adc_a, raw_adc_b  <- raw 12-bit codes [LSB]
-//   amps_a, amps_b        <- nominal phase currents [A]
-//   volts_a, volts_b      <- pin voltages [V]
-//   all motion / Iq fields <- 0
+// Packet fields (DualMotorStatusPacket — see Interface.hpp, normalised [-1,1]):
+//   m1/m2 ia, ib  <- measured phase currents A/B  (ic = -(ia+ib))
+//   all other channels <- 0
+// Raw 12-bit codes / pin volts are reported in the 1 Hz text summary only.
 //
 // Scope probes (ADC ConvCplt toggle):
 //   X: PA6 (D12)   Y: PB5 (D4) — same pins as Stage 4 dual TRGO test.
@@ -105,32 +104,10 @@ struct ChannelStats {
     }
 };
 
-void streamPacket(
-    uint8_t motor,
-    uint16_t rawA,
-    uint16_t rawB,
-    float amps_a,
-    float amps_b,
-    float volts_a,
-    float volts_b
-) {
-    const FOCStatusPacket packet = {
-        FOC_STATUS_HEADER,
-        motor,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f,
-        (float)rawA,
-        (float)rawB,
-        amps_a,
-        amps_b,
-        volts_a,
-        volts_b,
-    };
-    Serial.write((uint8_t*)&packet, sizeof(packet));
-}
-
 // One USB write for both motors — avoids the second packet being dropped when the
-// TX buffer fills between back-to-back Serial.write calls.
+// TX buffer fills between back-to-back Serial.write calls. Only phases A/B are
+// sensed, so phase C is reconstructed as -(A+B); raw codes and pin volts stay in
+// the 1 Hz text summary below. amps map to the ABC current channels.
 void streamDualPackets(
     uint16_t rawAx,
     uint16_t rawBx,
@@ -145,33 +122,13 @@ void streamDualPackets(
     float volts_ay,
     float volts_by
 ) {
-    alignas(4) uint8_t wire[2 * sizeof(FOCStatusPacket)];
-    auto* packets = reinterpret_cast<FOCStatusPacket*>(wire);
-    packets[0] = {
-        FOC_STATUS_HEADER,
-        1,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f,
-        (float)rawAx,
-        (float)rawBx,
-        amps_ax,
-        amps_bx,
-        volts_ax,
-        volts_bx,
-    };
-    packets[1] = {
-        FOC_STATUS_HEADER,
-        2,
-        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 0.0f,
-        (float)rawAy,
-        (float)rawBy,
-        amps_ay,
-        amps_by,
-        volts_ay,
-        volts_by,
-    };
-    Serial.write(wire, sizeof(wire));
+    (void)rawAx; (void)rawBx; (void)volts_ax; (void)volts_bx;
+    (void)rawAy; (void)rawBy; (void)volts_ay; (void)volts_by;
+    const MotorStatus m1 = makeNormalisedMotorStatus(
+        amps_ax, amps_bx, -(amps_ax + amps_bx), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    const MotorStatus m2 = makeNormalisedMotorStatus(
+        amps_ay, amps_by, -(amps_ay + amps_by), 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    sendDualMotorStatusPacket(m1, m2);
 }
 
 void printChannelSummary(

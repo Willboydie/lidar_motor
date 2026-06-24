@@ -293,16 +293,14 @@ static void _logHardwareConfig(
 
 // ---------- InlineCurrentSenseSTM32G4 ----------
 InlineCurrentSenseSTM32G4::InlineCurrentSenseSTM32G4(float mVpA, int pinA_, int pinB_, PWMDriverSTM32G4& _driver)
-: gain_a(1000.0f / mVpA)
-, gain_b(1000.0f / mVpA)
-, gain_c(1000.0f / mVpA)
-, offset_ia(1.65f)
-, offset_ib(1.65f)
-, offset_ic(0.0f)
-, pinA(pinA_)
+: pinA(pinA_)
 , pinB(pinB_)
 , driver(_driver)
-{}
+{
+    gain_a = gain_b = gain_c = 1000.0f / mVpA;
+    offset_ia = offset_ib = 1.65f;  // ACS712 mid-rail bias, refined by calibrateOffsets()
+    offset_ic = 0.0f;
+}
 void InlineCurrentSenseSTM32G4::_quiesceAllAdc12() {
     if (g_adc1_dma_owner != NULL) g_adc1_dma_owner->_stopDmaConversions();
     if (g_adc2_dma_owner != NULL) g_adc2_dma_owner->_stopDmaConversions();
@@ -598,17 +596,6 @@ PhaseCurrent_s InlineCurrentSenseSTM32G4::getPhaseCurrents() {
     i.b = (Vb - offset_ib) * gain_b;
     i.c = -(i.a + i.b);
     return i;
-}
-DQCurrent_s InlineCurrentSenseSTM32G4::getFOCCurrents(float angle_el) {
-    PhaseCurrent_s current = getPhaseCurrents();
-    float i_alpha = current.a;
-    float i_beta = _1_SQRT3 * current.a + _2_SQRT3 * current.b;
-    float st, ct;
-    fast_sincos(angle_el, &st, &ct);
-    DQCurrent_s dq;
-    dq.d = i_alpha * ct + i_beta * st;
-    dq.q = i_beta * ct - i_alpha * st;
-    return dq;
 }
 bool InlineCurrentSenseSTM32G4::readRawCodes(uint16_t& rawA, uint16_t& rawB) {
     if (!initialised) return false;

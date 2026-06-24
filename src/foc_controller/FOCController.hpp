@@ -30,6 +30,10 @@ public:
     float getAngularVelocity() { return angular_velocity; }
     float getMechanicalAngle() { return mechanical_angle; }
     float getElectricalAngle() { return electrical_angle; }
+    float getCommandedElectricalAngle() const {
+        return normalise_angle(
+            target_angle * motor_pole_pairs * motor_sensor_direction - motor_electrical_offset);
+    }
     float getAngularError() { return angular_error; }
     float getVelocityError() { return velocity_error; }
     float getTargetAngle() { return target_angle; }
@@ -40,8 +44,14 @@ public:
     float getMeasuredDCurrent() { return Id; }
     float getVq() { return Vq; }
     float getVd() { return Vd; }
+    float getVa() { return Va; }  // phase voltage as sent to PWM [V]
+    float getVb() { return Vb; }
+    float getVc() { return Vc; }
     float getMechanicalOffset() { return motor_electrical_offset; }
     float getElectricalOffset() { return motor_electrical_offset; }
+    void setElectricalOffset(float offset) {
+        motor_electrical_offset = normalise_angle(offset);
+    }
 
     void setControlMode(ControlMode _controlMode);
     void setTargetAngle(float _target_world_angle);
@@ -135,5 +145,5 @@ private:
     const float motor_K_e;
     const float motor_pole_pairs;
     const float motor_sensor_direction;
-    const float motor_electrical_offset;
+    float motor_electrical_offset;
 };

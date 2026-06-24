@@ -119,15 +119,18 @@ inline float captureStage(const char* motor_label, int pole_pair, int displaceme
         }
     }
 
-    // Grab the next CAPTURE_SAMPLES readings and average the raw mechanical
-    // angle (a single detent is mechanically stable, so no wrap concerns here).
-    float sum = 0.0f;
+    // Grab the next CAPTURE_SAMPLES readings and average using circular statistics
+    // to protect against detents that sit exactly on the 0/2pi wrap.
+    float sum_sin = 0.0f;
+    float sum_cos = 0.0f;
     for (int i = 0; i < CAPTURE_SAMPLES; i++) {
         sensor.update();
-        sum += sensor.getLatestRotorAngle();
+        float angle = sensor.getLatestRotorAngle();
+        sum_sin += sinf(angle);
+        sum_cos += cosf(angle);
         delay(CAPTURE_SAMPLE_GAP_MS);
     }
-    float avg_angle = sum / (float)CAPTURE_SAMPLES;
+    float avg_angle = normalise_angle(atan2f(sum_sin, sum_cos));
     float offset = offsetFromAngle(avg_angle, motor.pole_pairs, motor.sensor_direction);
     Serial.println(String(">>> Captured. avg angle: ") + String(avg_angle, 4) +
                    " rad -> electrical offset: " + String(offset, 4) + " rad");
@@ -166,25 +169,31 @@ inline float measureMotor(const char* motor_label, AS5048& sensor,
 
     driver.setPwm(0.0f, 0.0f, 0.0f);  // de-energise this motor, measurement done
 
-    // Summarise. Mean of the 14 values == mean of the 7 per-pole-pair midpoints.
-    // Assumes the values do not straddle the 0/2pi wrap (true for these motors).
-    float sum = 0.0f;
+    // Summarise. Circular mean of the 14 values == circular mean of the 7 midpoints.
+    float sum_sin = 0.0f;
+    float sum_cos = 0.0f;
     Serial.println();
     Serial.println(String("---- ") + motor_label + " results ----");
     Serial.println("[  # [clockwise, anticlockwise] per pole pair");
     for (int pp = 0; pp < NUM_POLE_PAIRS; pp++) {
         float cw = offsets[pp][CLOCKWISE];
         float ccw = offsets[pp][ANTICLOCKWISE];
-        float mid = (cw + ccw) / 2.0f;
-        sum += cw + ccw;
+
+        // Circular average of the two bounds for the local midpoint
+        float mid = normalise_angle(atan2f(sinf(cw) + sinf(ccw), cosf(cw) + cosf(ccw)));
+
+        // Accumulate vectors for the global motor offset
+        sum_sin += sinf(cw) + sinf(ccw);
+        sum_cos += cosf(cw) + cosf(ccw);
         Serial.println(String("  [") + String(cw, 4) + ", " + String(ccw, 4) + "]" +
                        (pp < NUM_POLE_PAIRS - 1 ? "," : " ") + "  # pp " + String(pp + 1) +
                        " midpoint: " + String(mid, 4));
     }
     Serial.println("]");
 
-    float mean_offset = sum / (float)NUM_STAGES;
-    Serial.println(String(motor_label) + " electrical offset (mean of " + String(NUM_STAGES) +
+    // Extract the final offset from the accumulated 14 displacement vectors
+    float mean_offset = normalise_angle(atan2f(sum_sin, sum_cos));
+    Serial.println(String(motor_label) + " electrical offset (circular mean of " + String(NUM_STAGES) +
                    " values): " + String(mean_offset, 4) + " rad");
     return mean_offset;
 }

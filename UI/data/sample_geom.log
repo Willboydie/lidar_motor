@@ -1,0 +1,7 @@
+SWEEP_HEADER label theta_forced theta_meas mech theta_est
+SWEEP M1 0.0000 4.0852 0.5836 0.0012
+SWEEP M1 0.1745 4.2597 0.6085 0.0010
+SWEEP M1 0.3491 4.4343 0.6334 0.0008
+GEOM_SUM M1 mean_implied=4.0850 stored=4.0852 offset_err=-0.0002 circ_std=0.0120 max_est_err=0.0015 mech_travel=0.8976 expected_mech_travel=0.8976
+GEOM_DONE M1
+GEOM_TEST_COMPLETE

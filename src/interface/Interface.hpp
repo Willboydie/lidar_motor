@@ -7,6 +7,8 @@
 #include "ldm/LDM.hpp"
 #include "sensor/Sensor.hpp"
 #include "scan_path/ScanPath.hpp"
+#include "current_sense/InlineCurrentSense.hpp"
+#include "utils/constants.h"
 #include "utils/quick_defs.h"
 #include "utils/tweakable_params.h"
 
@@ -42,31 +44,67 @@
 #define TARGET_1_SET_CMD 0b00010000
 #define TARGET_2_SET_CMD 0b00010100
 
-// Outgoing binary FOC status packet header (0xAA, distinct from DataStream's 0x55)
+#define ELECTRICAL_OFFSET_1_SET_CMD 0b00011000
+#define ELECTRICAL_OFFSET_2_SET_CMD 0b00011001
+
+// Outgoing binary status packet header (0xAA, distinct from DataStream's 0x55)
 #define FOC_STATUS_HEADER 0b10101010
 
+// One combined packet carries both motors at once. All MotorStatus fields are
+// floats normalised to [-1, 1]: currents by MOTOR_CURRENT_LIMIT, phase voltages
+// by VOLTAGE_POWER_SUPPLY, raw/cmd/elec angles by _2PI (so 0..2pi maps to 0..1),
+// angular error by _PI (so [-pi, pi] maps to [-1, 1]).
 #pragma pack(push, 1)
-struct FOCStatusPacket {
-    uint8_t header;           // FOC_STATUS_HEADER
-    uint8_t motor;            // motor number (1 or 2)
-    float angle;              // mechanical angle [rad]
-    float raw_velocity;       // unfiltered angular velocity [rad/s]
-    float filtered_velocity;  // filtered angular velocity [rad/s]
-    float target_angle;       // [rad]
-    float target_velocity;    // [rad/s]
-    float angular_error;      // [rad]
-    float velocity_error;     // [rad/s]
-    float target_iq;          // [A]
-    float requested_vq;       // [V]
-    float measured_iq;        // [A]
-    float raw_adc_a;          // current sense A, raw 12-bit code [LSB]
-    float raw_adc_b;          // current sense B, raw 12-bit code [LSB]
-    float amps_a;             // phase A current [A]
-    float amps_b;             // phase B current [A]
-    float volts_a;            // phase A sense voltage at pin [V]
-    float volts_b;            // phase B sense voltage at pin [V]
+struct MotorStatus {
+    float ia, ib, ic;   // inline phase currents (ABC)
+    float id, iq;        // transformed currents (DQ)
+    float raw_angle;         // raw sensor angle (mechanical)
+    float elec_angle;        // measured electrical angle
+    float cmd_elec_angle;    // electrical angle implied by target mechanical angle
+    float angular_error;     // target - mechanical, shortest path [-pi, pi]
+    float va, vb, vc;    // phase voltages as sent to the PWM
+};
+struct DualMotorStatusPacket {
+    uint8_t header;      // FOC_STATUS_HEADER
+    MotorStatus m1;      // motor 1 (X)
+    MotorStatus m2;      // motor 2 (Y)
 };
 #pragma pack(pop)
+
+// Normalise raw physical quantities into a [-1, 1] MotorStatus.
+inline MotorStatus makeNormalisedMotorStatus(
+    float ia, float ib, float ic,
+    float id, float iq,
+    float raw_angle, float elec_angle, float cmd_elec_angle, float angular_error,
+    float va, float vb, float vc
+) {
+    auto norm = [](float v, float ref) {
+        float x = (ref != 0.0f) ? v / ref : 0.0f;
+        if (x > 1.0f) return 1.0f;
+        if (x < -1.0f) return -1.0f;
+        return x;
+    };
+    MotorStatus s;
+    s.ia = norm(ia, MOTOR_CURRENT_LIMIT);
+    s.ib = norm(ib, MOTOR_CURRENT_LIMIT);
+    s.ic = norm(ic, MOTOR_CURRENT_LIMIT);
+    s.id = norm(id, MOTOR_CURRENT_LIMIT);
+    s.iq = norm(iq, MOTOR_CURRENT_LIMIT);
+    s.raw_angle = norm(raw_angle, _2PI);
+    s.elec_angle = norm(elec_angle, _2PI);
+    s.cmd_elec_angle = norm(cmd_elec_angle, _2PI);
+    s.angular_error = norm(angular_error, _PI);
+    s.va = norm(va, VOLTAGE_POWER_SUPPLY);
+    s.vb = norm(vb, VOLTAGE_POWER_SUPPLY);
+    s.vc = norm(vc, VOLTAGE_POWER_SUPPLY);
+    return s;
+}
+
+// Build and write one dual-motor packet over Serial (shared by Interface + tests).
+inline void sendDualMotorStatusPacket(const MotorStatus& m1, const MotorStatus& m2) {
+    DualMotorStatusPacket packet{ FOC_STATUS_HEADER, m1, m2 };
+    Serial.write((uint8_t*)&packet, sizeof(packet));
+}
 
 
 class Interface {
@@ -77,6 +115,8 @@ public:
         FOCController& _focController2, 
         Sensor& _sensor1, 
         Sensor& _sensor2, 
+        InlineCurrentSense& _currentSense1, 
+        InlineCurrentSense& _currentSense2, 
         LDM& _ldm, 
         ScanPath& _scanPath
     );
@@ -84,7 +124,7 @@ public:
     void commandListener();
     void printStatus();
     void printFOCStatus(FOCController& focController, Sensor& sensor);
-    void sendFOCStatus(FOCController& focController, Sensor& sensor);
+    void sendDualMotorStatus();
     
 private:
     void handleDisableEnable();
@@ -93,6 +133,8 @@ private:
 
     void handleTarget1Set(float data);
     void handleTarget2Set(float data);
+    void handleElectricalOffset1Set(float data);
+    void handleElectricalOffset2Set(float data);
     void handleVelocityPSet(float data);
     void handleVelocityISet(float data);
     void handleVelocityDSet(float data);
@@ -123,6 +165,8 @@ private:
     FOCController& focController2;
     Sensor& sensor1;
     Sensor& sensor2;
+    InlineCurrentSense& currentSense1;
+    InlineCurrentSense& currentSense2;
     LDM& ldm;
     ScanPath& scanPath;
     uint8_t cmd;
