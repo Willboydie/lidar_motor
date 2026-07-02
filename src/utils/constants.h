@@ -42,6 +42,9 @@
 // motor 2
 #define N1_2 7  // orange
 #define N2_2 8 // yellow
+// N3=9 (FlexPWM2_2_B) shares FlexPWM2 submodule 2 with motor-X N1=6 (FlexPWM2_2_A).
+// Independent duty (chA vs chB), shared counter. Cross-motor phase is fixed by
+// PWMDriverTeensy41::alignAllRegisteredSubmodules() after both motors init.
 #define N3_2 9 // green
 #define EN_2 23 // blue
 #define SENSOR_SPI_CS_2 15 // white
@@ -81,7 +84,7 @@
 
 // MOTOR X electrical offset: 1.4245 rad  (-> constants.h SENSOR_OFFSET_1)
 // MOTOR Y electrical offset: 6.1692 rad  (-> constants.h SENSOR_OFFSET_2)
-#define SENSOR_OFFSET_X  4.75f // electrical offset in radians
+#define SENSOR_OFFSET_X  0.63f // electrical offset in radians
 #define SENSOR_OFFSET_Y 6.17f
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution

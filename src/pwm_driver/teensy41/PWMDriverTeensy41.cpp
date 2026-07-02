@@ -7,6 +7,80 @@
 #pragma message("SimpleFOC: compiling for Teensy 4.1")
 #pragma message("")
 
+namespace {
+
+struct TeensySubmoduleRef {
+  IMXRT_FLEXPWM_t* flexpwm;
+  int submodule;
+};
+
+constexpr int kMaxRegisteredSubmodules = 8;
+TeensySubmoduleRef registered_submodules[kMaxRegisteredSubmodules];
+int num_registered_submodules = 0;
+
+bool same_submodule(IMXRT_FLEXPWM_t* flexpwm_a, int submodule_a,
+                    IMXRT_FLEXPWM_t* flexpwm_b, int submodule_b) {
+  return flexpwm_a == flexpwm_b && submodule_a == submodule_b;
+}
+
+void register_submodule(IMXRT_FLEXPWM_t* flexpwm, int submodule) {
+  if (flexpwm == nullptr || submodule < 0 || submodule > 3) return;
+  for (int i = 0; i < num_registered_submodules; ++i) {
+    if (registered_submodules[i].flexpwm == flexpwm &&
+        registered_submodules[i].submodule == submodule) {
+      return;
+    }
+  }
+  if (num_registered_submodules >= kMaxRegisteredSubmodules) return;
+  registered_submodules[num_registered_submodules++] = {flexpwm, submodule};
+}
+
+void register_motor_submodules(IMXRT_FLEXPWM_t* flexpwm_a, int submodule_a,
+                               IMXRT_FLEXPWM_t* flexpwm_b, int submodule_b,
+                               IMXRT_FLEXPWM_t* flexpwm_c, int submodule_c) {
+  register_submodule(flexpwm_a, submodule_a);
+  if (!same_submodule(flexpwm_b, submodule_b, flexpwm_a, submodule_a)) {
+    register_submodule(flexpwm_b, submodule_b);
+  }
+  if (!same_submodule(flexpwm_c, submodule_c, flexpwm_a, submodule_a) &&
+      !same_submodule(flexpwm_c, submodule_c, flexpwm_b, submodule_b)) {
+    register_submodule(flexpwm_c, submodule_c);
+  }
+}
+
+}  // namespace
+
+void PWMDriverTeensy41::clearRegisteredSubmodules() {
+  num_registered_submodules = 0;
+}
+
+void PWMDriverTeensy41::alignAllRegisteredSubmodules() {
+  if (num_registered_submodules == 0) return;
+
+  for (int i = 0; i < num_registered_submodules; ++i) {
+    IMXRT_FLEXPWM_t* flexpwm = registered_submodules[i].flexpwm;
+    const int submodule = registered_submodules[i].submodule;
+    const uint16_t mask = static_cast<uint16_t>(1U << submodule);
+    flexpwm->MCTRL &= ~FLEXPWM_MCTRL_RUN(mask);
+  }
+
+  for (int i = 0; i < num_registered_submodules; ++i) {
+    IMXRT_FLEXPWM_t* flexpwm = registered_submodules[i].flexpwm;
+    const int submodule = registered_submodules[i].submodule;
+    flexpwm->MCTRL |= FLEXPWM_MCTRL_CLDOK(static_cast<uint16_t>(1U << submodule));
+    flexpwm->SM[submodule].CNT = flexpwm->SM[submodule].INIT;
+    flexpwm->MCTRL |= FLEXPWM_MCTRL_LDOK(static_cast<uint16_t>(1U << submodule));
+  }
+
+  noInterrupts();
+  for (int i = 0; i < num_registered_submodules; ++i) {
+    IMXRT_FLEXPWM_t* flexpwm = registered_submodules[i].flexpwm;
+    const int submodule = registered_submodules[i].submodule;
+    flexpwm->MCTRL |= FLEXPWM_MCTRL_RUN(static_cast<uint16_t>(1U << submodule));
+  }
+  interrupts();
+}
+
 
 
 // function setting the pwm duty cycle to the hardware
@@ -80,22 +154,32 @@ void* PWMDriverTeensy41::configure3PWM(long pwm_frequency,const int pinA, const 
   if ((flexpwmA != nullptr) && (flexpwmB != nullptr) && (flexpwmC != nullptr) && (channelA > 0) && (channelB > 0) && (channelC > 0)) {
     Serial.println("TEENSY-DRV: All pins on Flexpwm A or B channels - Configuring center-aligned pwm!");
 
-    // Configure FlexPWM units
-    setup_pwm_timer_submodule (flexpwmA, submoduleA, true, pwm_frequency) ;  // others externally synced
-    setup_pwm_timer_submodule (flexpwmB, submoduleB, true, pwm_frequency) ;  // others externally synced
-    setup_pwm_timer_submodule (flexpwmC, submoduleC, false, pwm_frequency) ; // this is the master, internally synced
-    delayMicroseconds (100) ;
+    // Each distinct submodule is configured once. B and C often share one counter
+    // (A/B channels on the same submodule); the old code configured that submodule
+    // twice and XBAR-synced it to itself.
+    if (!same_submodule(flexpwmA, submoduleA, flexpwmC, submoduleC)) {
+      setup_pwm_timer_submodule(flexpwmA, submoduleA, true, pwm_frequency);
+    }
+    if (!same_submodule(flexpwmB, submoduleB, flexpwmC, submoduleC) &&
+        !same_submodule(flexpwmB, submoduleB, flexpwmA, submoduleA)) {
+      setup_pwm_timer_submodule(flexpwmB, submoduleB, true, pwm_frequency);
+    }
+    setup_pwm_timer_submodule(flexpwmC, submoduleC, false, pwm_frequency);
+    delayMicroseconds(100);
 
-    
-    // Serial.printf("TEENSY-CS: Syncing to Master FlexPWM: %d, Submodule: %d\n", flexpwm_to_index(flexpwmC), submoduleC);
-    // Serial.printf("TEENSY-CS: Slave timers FlexPWM: %d, Submodule: %d and FlexPWM: %d, Submodule: %d\n", flexpwm_to_index(flexpwmA), submoduleA, flexpwm_to_index(flexpwmB), submoduleB);
+    xbar_init();
 
-    // // turn on XBAR1 clock for all but stop mode
-    xbar_init() ;
+    if (!same_submodule(flexpwmA, submoduleA, flexpwmC, submoduleC)) {
+      xbar_connect(flexpwm_submodule_to_trig(flexpwmC, submoduleC),
+                   flexpwm_submodule_to_ext_sync(flexpwmA, submoduleA));
+    }
+    if (!same_submodule(flexpwmB, submoduleB, flexpwmC, submoduleC) &&
+        !same_submodule(flexpwmB, submoduleB, flexpwmA, submoduleA)) {
+      xbar_connect(flexpwm_submodule_to_trig(flexpwmC, submoduleC),
+                   flexpwm_submodule_to_ext_sync(flexpwmB, submoduleB));
+    }
 
-    // // Connect trigger to synchronize all timers 
-    xbar_connect (flexpwm_submodule_to_trig(flexpwmC, submoduleC), flexpwm_submodule_to_ext_sync(flexpwmA, submoduleA)) ;
-    xbar_connect (flexpwm_submodule_to_trig(flexpwmC, submoduleC), flexpwm_submodule_to_ext_sync(flexpwmB, submoduleB)) ;
+    register_motor_submodules(flexpwmA, submoduleA, flexpwmB, submoduleB, flexpwmC, submoduleC);
   
     Teensy41DriverParams* params = new Teensy41DriverParams {
       .pins = { pinA, pinB, pinC },

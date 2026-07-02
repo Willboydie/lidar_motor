@@ -1,446 +1,709 @@
-# FOC Bring-Up Plan (clean-slate, voltage-mode, dual-target)
+# FOC Bring-Up Test Plan (ground-up, layer-by-layer, dual-axis)
 
-A phase-gate procedure for rebuilding the field-oriented-control (FOC) firmware for
-the dual-axis LiDAR gimbal from scratch. The goal is not to "make the motor move" - it
-is to **guarantee** a working FOC program by passing a series of engineering gates,
-where each gate is validated by **measured evidence** before the next one is attempted.
+A phase-gate procedure for proving the dual-axis LiDAR-gimbal FOC firmware **from the
+silicon up**. The previous test suite (AI-authored, opaque, untrustworthy) has been
+deleted in full. This plan replaces it with a set of **small, human-readable, single-
+purpose** test scripts, each of which validates exactly one layer of the system against
+**numeric, observable exit criteria**.
 
-## 0. Purpose and ground rules
+The governing idea: FOC only works when many independent things are simultaneously
+correct (wiring, phase order, timer sync, modulation math, encoder direction, electrical
+offset, filter tuning, loop gains). When it misbehaves you cannot tell *which* layer is
+wrong. This plan removes that ambiguity by bringing each layer up **in isolation, in
+strict dependency order**, and refusing to advance until the current layer is proven with
+evidence.
 
-The previous FOC implementation is being abandoned in favour of a clean rebuild. The
-risk with any FOC bring-up is that several independent things must all be correct at
-once (phase wiring, modulation math, encoder direction, electrical offset, loop tuning),
-and when the motor misbehaves it is impossible to tell *which* layer is wrong. This plan
-removes that ambiguity by bringing each layer up **in isolation, in dependency order**,
-and refusing to advance until the current layer is proven.
+---
+
+## 0. Ground rules (non-negotiable)
+
+1. **No layer is skipped.** Layers are ordered by dependency. A later layer's evidence is
+   meaningless if an earlier one has not passed.
+2. **No layer passes on intuition.** "It looks like it's spinning" is not a pass. Every
+   gate has an explicit numeric or scope-observable pass bar. Record it.
+3. **A failed gate loops back, it does not get worked around.** If a symptom appears two
+   layers later, the fault is almost always the last gate that was waved through.
+4. **Every test script is small and readable.** One file, one purpose, one function,
+   parseable serial output. If you cannot read a test in one sitting and say exactly what
+   it proves, rewrite it. (This is the failure mode that produced the deleted suite.)
+5. **Safety is always armed** from the moment coils can be energised (Section 3).
 
 ### End-state definition (scope)
 
-- **Voltage-mode FOC.** Commutation is closed on the AS5048 magnetic encoder. Torque is
+- **Voltage-mode FOC.** Commutation closes on the AS5048 magnetic encoder. Torque is
   commanded by computing a phase voltage `Vq` from a motor model
   (`estimate_Vq()` in [src/foc_controller/FOCController.cpp](../src/foc_controller/FOCController.cpp)),
   **not** from a measured-current PI loop. There is **no current feedback** in the final
-  controller. (`src/current_sense/` is out of scope and stays excluded from both builds.)
-- **Dual-target parity.** Every layer is exercised on **both** the STM32G4 Nucleo
-  (`[env:stm32g4]`) and the Teensy 4.1 (`[env:teensy41]`) targets, through the shared
-  `PWMDriver` / `Sensor` virtual interfaces. Hardware-specific code lives only behind
-  those interfaces (e.g. [src/pwm_driver/stm32g4/](../src/pwm_driver/stm32g4/)).
-- **Control topology.** Cascade: position (angle) loop -> velocity loop -> `estimate_Vq`
-  -> inverse Park + Clarke -> midpoint-clamped SVPWM -> `PWMDriver::setPwm()`.
+  controller. `src/current_sense/` stays excluded from both builds.
+- **Control topology.** Cascade: angle loop → velocity loop → `estimate_Vq` → inverse
+  Park → Clarke → midpoint-clamp SVPWM → `PWMDriver::setPwm()`.
+- **Dual-target.** Primary bench target is the **STM32G4 Nucleo** (`[env:stm32g4]`).
+  Every axis-agnostic layer is also re-validated on **Teensy 4.1** (`[env:teensy41]`)
+  through the shared `PWMDriver` / `Sensor` interfaces.
+- **Dual-axis.** Motors **X** and **Y** are brought up with **separate, duplicated** test
+  scripts (`*_x_test.hpp` / `*_y_test.hpp`) run one at a time. The **final** gate runs
+  full cascade FOC on **both axes simultaneously**.
 
-### The non-negotiable rules
+---
 
-1. **No gate is skipped.** Gates are ordered by dependency; a later gate's evidence is
-   meaningless if an earlier gate has not passed.
-2. **No gate passes on intuition.** "Looks like it's spinning" is not a pass. Each gate
-   has explicit numeric / observable **exit criteria** captured as evidence (serial log,
-   scope capture, or recorded measurement).
-3. **A failed gate loops back, it does not get worked around.** If a symptom appears two
-   gates later, the fault is almost always in the last gate that was waved through.
-4. **Safety is always armed.** The standing abort criteria (Section 2) apply during
-   every gate, not just the motor-spinning ones.
+## 1. System under test (grounding facts)
 
-### Clean-slate strategy: what to keep vs rewrite
+These are the concrete facts every test is written against. Pulled from
+[src/utils/constants.h](../src/utils/constants.h),
+[src/motor/GM2804.hpp](../src/motor/GM2804.hpp), and
+[src/sensor/AS5048.hpp](../src/sensor/AS5048.hpp).
 
-| Layer | Decision | Rationale |
-|---|---|---|
-| `PWMDriver` + adapters ([src/pwm_driver/](../src/pwm_driver/)) | **Keep, re-test** | Hardware timer logic is proven; re-validate at Gate 2, do not rewrite. |
-| `Sensor` / `AS5048` ([src/sensor/](../src/sensor/)) | **Keep, re-test** | Encoder driver is proven; re-validate at Gate 1. |
-| `PIDControl` ([src/pid_control/](../src/pid_control/)) | **Keep** | Generic; re-tuned at Gates 6-7. |
-| Electrical-offset autocal ([src/tests/sensor/electrical_offset_autocal_test.hpp](../src/tests/sensor/electrical_offset_autocal_test.hpp)) | **Keep** | Stiction-bracket method is documented and trusted ([docs/motor_calibration_findings.md](motor_calibration_findings.md)). |
-| `FOCController` ([src/foc_controller/](../src/foc_controller/)) | **Rewrite from scratch** | This is the suspect layer; re-derive it gate-by-gate. |
-| `src/current_sense/` | **Shelve / delete** | Not used in voltage mode; already excluded from both builds in [platformio.ini](../platformio.ini). |
+| Item | Motor X | Motor Y | Source |
+|---|---|---|---|
+| MCU (bench) | STM32G4 Nucleo (`nucleo_g474re`) | same board | `platformio.ini` |
+| MCU (parity) | Teensy 4.1 | same board | `platformio.ini` |
+| Driver | DRV8313, 3-PWM (high-side drive, no dead-time in FW) | same | arch report |
+| Motor | GM2804, 7 pole pairs, `R=9.0 Ω`, `Kv=169`, `Ke=0.057` | same | `GM2804.hpp` |
+| Phase pins (G4) | `N1=PA8 N2=PA9 N3=PA10` (TIM1) | `N1=PC6 N2=PC7 N3=PB9` (TIM8) | `constants.h` |
+| Enable (G4) | `EN=PA7` | `EN=PB10` | `constants.h` |
+| Encoder | AS5048A, 14-bit (CPR 16384), SPI mode 1, 10 MHz | same | `AS5048.hpp` |
+| Encoder CS (G4) | `PB2` | `PB1` | `constants.h` |
+| SPI bus (G4) | MISO `PB14`, MOSI `PB15`, SCK `PB13` (shared) | shared | `constants.h` |
+| Sensor direction | `+1` (CCW) | `+1` (CCW) | `constants.h` |
+| Electrical offset | `SENSOR_OFFSET_X` (to be re-measured) | `SENSOR_OFFSET_Y` (to be re-measured) | `constants.h` |
+| PWM | 25 kHz, center-aligned | same | `constants.h` |
+| Limits | `MOTOR_VOLTAGE_LIMIT=12 V`, `MOTOR_CURRENT_LIMIT=0.8 A`, `VPS=12 V` | same | `constants.h` |
 
-## 1. The phase-gate model
+> The current `SENSOR_OFFSET_X/Y` in `constants.h` (0.63 / 6.17) are **suspect** — they do
+> not match the documented autocal values (X≈4.0852, Y≈2.5624) in
+> [docs/motor_calibration_findings.md](motor_calibration_findings.md). They are
+> **re-measured and rewritten at Layer 9**, not trusted before then.
 
-```mermaid
-flowchart TD
-    G0["Gate 0\nFoundations & Safety"] --> G1["Gate 1\nEncoder integrity"]
-    G1 --> G2["Gate 2\nPWM / driver integrity"]
-    G2 --> G3["Gate 3\nOpen-loop forced commutation"]
-    G3 --> G4["Gate 4\nSensor alignment\n(pole pairs, dir, offset)"]
-    G4 --> G5["Gate 5\nClosed-loop commutation\n(torque sign test)"]
-    G5 --> G6["Gate 6\nVelocity loop"]
-    G6 --> G7["Gate 7\nPosition (angle) loop"]
-    G7 --> G8["Gate 8\nDual-axis + integration"]
-    G8 --> G9["Gate 9\nAcceptance & regression"]
+---
 
-    G2 -. "fail: rewire / fix timers" .-> G2
-    G3 -. "fail: phase order / modulation" .-> G2
-    G5 -. "fail: wrong sign or offset" .-> G4
-    G7 -. "fail: instability" .-> G6
+## 2. Test harness conventions
+
+Because the old suite was unreadable, structure is mandated here.
+
+### 2.1 File layout & naming
+
+Recreate `src/tests/` with one subfolder per layer. Every harness is a single
+`inline void <name>()` in a `.hpp`, self-contained, called from the entry-point stub.
+
+```
+src/tests/
+  mcu/        mcu_alive_test.hpp, loop_timing_test.hpp
+  wiring/     gpio_map_x_test.hpp,     gpio_map_y_test.hpp
+  windings/   phase_energize_x_test.hpp, phase_energize_y_test.hpp
+  sensor/     encoder_integrity_x_test.hpp, encoder_integrity_y_test.hpp
+              velocity_estimate_x_test.hpp, velocity_estimate_y_test.hpp
+              pole_pair_dir_x_test.hpp,   pole_pair_dir_y_test.hpp
+              electrical_offset_autocal_x_test.hpp, electrical_offset_autocal_y_test.hpp
+  filter/     filter_char_x_test.hpp,    filter_char_y_test.hpp
+  pwm/        pwm_channel_x_test.hpp,    pwm_channel_y_test.hpp
+              pwm_center_aligned_x_test.hpp, pwm_center_aligned_y_test.hpp
+              pwm_sync_x_test.hpp,       pwm_sync_y_test.hpp
+              pwm_sync_dual_test.hpp
+  modulation/ modulation_x_test.hpp,     modulation_y_test.hpp
+  motor/      open_loop_x_test.hpp,      open_loop_y_test.hpp
+  foc/        torque_sign_x_test.hpp,    torque_sign_y_test.hpp
+              velocity_loop_x_test.hpp,  velocity_loop_y_test.hpp
+              angle_loop_x_test.hpp,     angle_loop_y_test.hpp
+              dual_foc_test.hpp
+  system/     soak_test.hpp
 ```
 
-Each gate is exercised by a dedicated bench test, switched in via the entry-point stub
-rather than the full `main`:
+**Rule: X and Y scripts are byte-for-byte identical except for the axis constants**
+(`N*_X/EN_X/SENSOR_SPI_CS_X/SENSOR_OFFSET_X` vs the `_Y` set, and motor number `1` vs `2`).
+Duplicate deliberately — do **not** parameterise into one file. Running the wrong axis
+must be impossible by accident, and a per-axis file is the audit trail.
 
-- **STM32G4:** edit [src/_stm32g4_main_stub.cpp](../src/_stm32g4_main_stub.cpp) to call the
-  gate's test function, then `pio run -e stm32g4 --target upload -t monitor`.
-- **Teensy 4.1:** call the equivalent test from the Teensy entry point, then
-  `pio run -e teensy41 --target upload -t monitor`.
+### 2.2 Running a test
 
-Most gate harnesses already exist under [src/tests/](../src/tests/); the rebuild is
-mostly about re-walking them in order against a freshly written `FOCController`.
+- **STM32G4:** uncomment exactly **one** test include + call in
+  [src/_stm32g4_main_stub.cpp](../src/_stm32g4_main_stub.cpp), then:
+  ```
+  pio run -e stm32g4 --target upload -t monitor
+  ```
+- **Teensy 4.1:** same, in [src/_teensy_main_stub.cpp](../src/_teensy_main_stub.cpp), then:
+  ```
+  pio run -e teensy41 --target upload -t monitor
+  ```
 
-## 2. Standing safety and abort criteria
+> First action before any test builds: the stubs currently `#include` the deleted
+> harnesses and will not compile. Reduce each stub to a single active include for the
+> layer under test.
 
-These apply at **every** gate from the moment coils can be energised. Wire them in before
-Gate 3 and leave them armed for the rest of the bring-up.
+### 2.3 Serial output contract
+
+Every harness prints machine-parseable lines so results can be logged/plotted, not eyeballed:
+
+- A one-line banner: `TEST <name> axis=<X|Y> target=<g4|teensy>`.
+- Streaming data as CSV rows with a fixed tag prefix, e.g. `DBG <a>,<b>,<c>` or
+  `TGT <...>`, at a stated rate.
+- A terminal verdict line the operator fills against the exit criteria:
+  `RESULT <name> PASS|FAIL <key metric>=<value>`.
+
+Reuse the existing telemetry where it helps (`Interface::sendDualMotorStatus()` /
+`printFOCStatus()` and the `UI/` plotters) but the atomic gates should stand alone.
+
+---
+
+## 3. Standing safety & abort criteria
+
+Apply at **every** gate from Layer 5 onward (first coil energisation). Wire them in and
+leave them armed.
 
 | Hazard | Trip condition | Action |
 |---|---|---|
-| Overcurrent | Bench supply hits its current limit, or any phase exceeds `MOTOR_CURRENT_LIMIT` (0.8 A) headroom | Supply folds back; `disable()` the driver (`EN` low) |
-| Thermal | Motor or DRV8313 too hot to touch / smell | Kill power, investigate before continuing |
-| Runaway | Rotor accelerates uncommanded, or velocity diverges | E-stop / `disable()`; treat as a Gate 3-5 failure |
-| Encoder fault | AS5048 error/parity flag set, or angle frozen/garbage | Abort the loop; do not command torque off a bad angle |
-| Software watchdog | `loop()` stalls / sensor `update()` returns false | Controller refuses to drive (existing guard in `FOCController::loop()`) |
+| Overcurrent | Bench supply hits its current limit, or a phase exceeds `MOTOR_CURRENT_LIMIT` (0.8 A) headroom | Supply folds back; `disable()` (`EN` low) |
+| Thermal | Motor or DRV8313 too hot to touch | Kill power; investigate |
+| Runaway | Rotor accelerates uncommanded / velocity diverges | E-stop / `disable()`; treat as Layer 8–10 failure |
+| Encoder fault | AS5048 parity/error flag set, or angle frozen/garbage | Abort loop; never command torque off a bad angle |
+| Software stall | `loop()` stalls / `sensor.update()` returns false | Controller refuses to drive (guard in `FOCController::loop()`) |
 
-Bench setup prerequisites (Gate 0 verifies these):
+Bench prerequisites (verified at Layer 0/1):
 
-- **Current-limited supply** set just above the gate's expected draw (e.g. 1.0-1.5 A for
-  alignment), so a wiring fault folds back instead of cooking the driver.
-- **`MOTOR_VOLTAGE_LIMIT` = 12.0 V**, **`VOLTAGE_POWER_SUPPLY` = 12.0 V**, current
-  ceiling **`MOTOR_CURRENT_LIMIT` = 0.8 A** (from [src/utils/constants.h](../src/utils/constants.h)).
-- **Mechanically free rotors** for Gates 3-5 (unloaded, free to spin ~1 turn) - the
+- **Current-limited supply**, set just above each gate's expected draw (≈1.0–1.5 A during
+  alignment) so a wiring fault folds back instead of cooking the DRV8313.
+- **Mechanically free rotors** for Layers 8–10 (unloaded, free ≥1 turn) — the
   stiction-bracket calibration depends on this.
-- Easy physical access to the **`EN` line / power switch** for a manual e-stop.
+- Easy physical access to the `EN` line / power switch for a manual e-stop.
 
-## 3. Evidence-table template
+---
 
-Every gate is signed off with a row like the following (keep these in a bring-up log).
-"Pass" must be an observation, never an opinion.
+## 4. Evidence log
 
-| Field | Example entry |
+Every gate is signed off with a row (keep a `logs/bringup_log.md`). "Pass" is an
+observation, never an opinion.
+
+| Field | Example |
 |---|---|
-| Gate | 3 - Open-loop forced commutation |
-| Target(s) | STM32G4 + Teensy 4.1 |
-| Test harness | `src/tests/motor/stm32g4_open_loop.hpp` |
-| Procedure run | Rotating Vq = 2.0 V at 0.5 rev/s, both directions |
-| Instrumentation | Serial log of commanded elec angle; scope on 2 phases; encoder angle stream |
-| Measured result | Smooth rotation both ways; phase currents balanced; no cog jumps |
-| Exit criteria met? | YES |
-| Evidence link | `logs/gate3_stm32g4.txt`, `scope_gate3.png` |
-| Notes / anomalies | Phase B/C initially swapped -> looped back, re-mapped pins |
-
-## 4. The engineering gates
-
-For each gate: **Entry criteria** (what must already be true), **Procedure** (what to
-do), **Instrumentation** (how you observe it), **Exit criteria** (the measured pass bar),
-and **Abort / rollback** (what failure means and where to loop back).
+| Gate | L6.2 — Dual-motor timer independence |
+| Axis / target | dual / stm32g4 |
+| Script | `pwm/pwm_sync_dual_test.hpp` |
+| Procedure | Both motors PWM at 25 kHz; scope one phase each |
+| Measurement | 6 distinct timer instances printed; no beat/cross-talk on scope |
+| Exit met? | YES |
+| Evidence | `logs/L6.2_g4.txt`, `scope_L6.2.png` |
+| Notes | — |
 
 ---
 
-### Gate 0 - Foundations & Safety
+## 5. Dependency flow
 
-Prove the toolchain, both build targets, basic I/O, and the safety envelope before any
-coil is energised.
+```mermaid
+flowchart TD
+    L0["L0 MCU & toolchain"] --> L1["L1 Wiring & power"]
+    L1 --> L2["L2 Phase windings"]
+    L2 --> L3["L3 Encoder integrity"]
+    L3 --> L4["L4 Velocity estimate & LPF"]
+    L2 --> L5["L5 PWM signal integrity"]
+    L5 --> L6["L6 PWM synchronisation"]
+    L6 --> L7["L7 Modulation math (Clarke/Park/SVPWM)"]
+    L4 --> L7
+    L7 --> L8["L8 Open-loop forced commutation"]
+    L8 --> L9["L9 Pole pairs, direction, electrical offset"]
+    L9 --> L10["L10 Closed-loop commutation sign"]
+    L10 --> L11["L11 Velocity loop PID"]
+    L11 --> L12["L12 Angle loop PID"]
+    L12 --> L13["L13 Dual-axis simultaneous FOC"]
+    L13 --> L14["L14 Acceptance & soak"]
 
-- **Entry criteria:** Bench supply, DRV8313 + GM2804 + AS5048 wired per
-  [src/utils/constants.h](../src/utils/constants.h) pin map; ST-Link and Teensy
-  programmers available.
-- **Procedure:**
-  1. Build and flash both environments: `pio run -e stm32g4` and `pio run -e teensy41`.
-  2. Run a heartbeat / serial-alive test
-     ([src/tests/system/stm32g4_heartbeat_test.hpp](../src/tests/system/stm32g4_heartbeat_test.hpp))
-     on STM32G4 and the equivalent on Teensy at `BAUD_RATE` (460800).
-  3. With the driver `EN` line held low, confirm the motor phases are **de-energised**
-     (no holding torque, free to spin by hand).
-  4. Set the bench supply current limit to a safe ceiling.
-- **Instrumentation:** Serial monitor (heartbeat counter), multimeter on phase outputs,
-  bench supply current readout.
-- **Exit criteria:**
-  - Both targets compile, flash, and print a heartbeat over serial.
-  - `EN` low provably leaves coils unpowered (rotor spins freely, ~0 phase voltage).
-  - Supply current limit set with headroom below `MOTOR_CURRENT_LIMIT`.
-- **Abort / rollback:** A target that won't build/flash blocks everything - fix
-  toolchain/board config first. If `EN` low does **not** de-energise coils, stop: the
-  driver enable path is miswired and Gate 2+ would be unsafe.
+    L8 -. "fail: phase order / modulation" .-> L7
+    L10 -. "fail: sign / offset" .-> L9
+    L12 -. "fail: instability" .-> L11
+    L6 -. "fail: timer alloc" .-> L6
+```
 
----
-
-### Gate 1 - Encoder integrity
-
-The entire controller is built on the encoder angle. If the angle is wrong, every later
-gate is built on sand.
-
-- **Entry criteria:** Gate 0 passed. AS5048 on the SPI bus
-  ([src/sensor/AS5048.hpp](../src/sensor/AS5048.hpp), `SPI_MODE1`, 10 MHz).
-- **Procedure:**
-  1. Run the sensor test ([src/tests/sensor/sensor_test.hpp](../src/tests/sensor/sensor_test.hpp)
-     and [src/tests/sensor/stm32g4_sensor_test.hpp](../src/tests/sensor/stm32g4_sensor_test.hpp)).
-  2. Rotate the rotor by hand through a full turn; confirm the reported angle sweeps
-     `0 -> 2pi` monotonically and wraps cleanly (no jumps mid-rotation).
-  3. Read diagnostics (AGC, magnitude, OCF/COF, parity) and confirm they sit in a healthy
-     band; magnet not too close/far.
-  4. Sanity-check velocity estimation
-     ([src/tests/sensor/velocity_spike_test.hpp](../src/tests/sensor/velocity_spike_test.hpp),
-     [src/tests/sensor/noise_test.hpp](../src/tests/sensor/noise_test.hpp)).
-- **Instrumentation:** Serial stream of raw angle + diagnostics; optionally the Python
-  plotters under `UI/`.
-- **Exit criteria:**
-  - Angle tracks a hand rotation cleanly over `0..2pi` with correct wrap.
-  - Error/parity flag rate ~0; AGC and magnitude within spec.
-  - Velocity estimate is smooth and sign-correct for a known hand motion, with no
-    spurious spikes at the wrap boundary.
-- **Abort / rollback:** Garbage/frozen angle -> SPI wiring, CS pin, mode, or clock issue.
-  Frequent parity errors -> bus integrity / magnet placement. Do not proceed to torque
-  with a flaky encoder.
+Layers **L1–L13 are run per-axis** (X first, then Y, via the duplicated scripts) except
+where marked "dual". **L13 is the only inherently simultaneous gate.**
 
 ---
 
-### Gate 2 - PWM / driver integrity
+## 6. The layers
 
-Prove that the three phase voltages requested in software become correct, safe waveforms
-at the DRV8313 inputs - **without** relying on the motor producing useful torque.
-
-- **Entry criteria:** Gates 0-1 passed.
-- **Procedure:**
-  1. Run the driver test ([src/tests/driver/stm32g4_driver_test.hpp](../src/tests/driver/stm32g4_driver_test.hpp))
-     and verify each of the three duty channels is independently controllable.
-  2. Verify **center-aligned** PWM at `MOTOR_PWM_FREQUENCY` (25 kHz)
-     ([src/tests/driver/stm32g4_center_aligned_test.hpp](../src/tests/driver/stm32g4_center_aligned_test.hpp)).
-  3. Verify `enable()` / `disable()` gate the outputs, and run the safe-stop test
-     ([src/tests/driver/stm32g4_safe_stop_test.hpp](../src/tests/driver/stm32g4_safe_stop_test.hpp)).
-  4. **Dual-motor timer audit:** confirm both axes' six PWM pins resolve to **six
-     distinct timer instances** (per the architecture report
-     [docs/STM32G4_architecture_report.md](STM32G4_architecture_report.md), Section 4);
-     run the dual center-aligned test
-     ([src/tests/driver/stm32g4_center_aligned_dual_test.hpp](../src/tests/driver/stm32g4_center_aligned_dual_test.hpp)).
-- **Instrumentation:** Oscilloscope on phase outputs (frequency, alignment, line-to-line
-  shape); the same on Teensy to confirm parity.
-- **Exit criteria:**
-  - Scope confirms 25 kHz, center-aligned, three independently controllable duties.
-  - Midpoint-clamp modulation (`setPhaseVoltage()` math) yields the expected
-    line-to-line waveform.
-  - `disable()` / `EN` low cuts all outputs immediately.
-  - Both motors' PWM run independently with no shared-timer interference.
-- **Abort / rollback:** Wrong frequency or edge-aligned output -> timer config. Channels
-  not independent or motors interfering -> timer allocation (loop within Gate 2). This is
-  the last gate before torque - do not advance with any waveform anomaly.
+Each layer: **Goal**, **Entry**, **Script(s) to write** (name + exactly what it does),
+**Instrumentation**, **Exit criteria** (numeric/observable), **Abort / rollback**.
 
 ---
 
-### Gate 3 - Open-loop forced commutation
+### L0 — MCU & toolchain
 
-Drive a rotating field using a **synthesized** electrical angle (the encoder is ignored
-here). This isolates and validates the **modulation math** (inverse Park + Clarke,
-`setPhaseVoltage()`) and the **phase wiring order** - the two things most likely to be
-wrong in a fresh build.
+**Goal:** Prove both targets build, flash, run, keep accurate time, and talk serial —
+before anything else is trusted.
 
-- **Entry criteria:** Gates 0-2 passed. Rotor mechanically free and unloaded.
-- **Procedure:**
-  1. Run the open-loop test ([src/tests/motor/stm32g4_open_loop.hpp](../src/tests/motor/stm32g4_open_loop.hpp)):
-     set `Vd = 0`, a modest fixed `Vq` (e.g. 1.5-2.5 V), and ramp `electrical_angle`
-     linearly at a slow open-loop rate.
-  2. Observe the rotor: it should rotate smoothly and track the commanded direction.
-  3. Reverse the commanded angle rate; confirm the rotor reverses.
-  4. Optionally probe cogging/symmetry
-     ([src/tests/driver/stm32g4_coil_cogging_test.hpp](../src/tests/driver/stm32g4_coil_cogging_test.hpp)).
-- **Instrumentation:** Serial log of commanded electrical angle and phase voltages;
-  visual rotor observation; scope on two phases (expect ~120deg-shifted sinusoids).
-- **Exit criteria:**
-  - Smooth rotation (no stutter / 60deg ratcheting that indicates a swapped phase).
-  - Direction reverses correctly when the commanded angle rate reverses.
-  - Current stays bounded under the limit at the chosen `Vq`.
-- **Abort / rollback:** Cogging/jerky motion or rotation only one way -> two phases
-  swapped: fix phase wiring or pin mapping and re-test (loop within Gate 3). If a single
-  `Vq`/angle produces no torque at all, loop back to Gate 2.
+**Entry:** Bench powered; ST-Link + Teensy programmer present.
 
-> Note: per [docs/motor_calibration_findings.md](motor_calibration_findings.md), these
-> motors are stiction-dominated when unloaded and will **not** lock synchronously to a
-> continuously rotating field - they ratchet. Gate 3's pass criterion is "smooth,
-> reversible motion proving phase order + modulation", **not** perfect synchronous lock.
-> Precise alignment is the job of Gate 4.
+**Scripts:**
+- `mcu/mcu_alive_test.hpp` — blink `LED_BUILTIN` at 1 Hz; print `hb <millis>` each second;
+  print `F_CPU`, and a measured `micros()` self-check (busy-wait a known interval, report
+  measured vs expected).
+- `mcu/loop_timing_test.hpp` — spin a tight loop for 1 s, print achieved iterations/s and
+  min/mean/max `micros()` delta. Establishes the real control-loop headroom the later
+  gates assume.
+
+**Instrumentation:** Serial monitor at `BAUD_RATE` (460800 on G4); LED.
+
+**Exit criteria:**
+- Both `pio run -e stm32g4` and `pio run -e teensy41` compile and flash clean.
+- Heartbeat prints once/second; LED toggles in lockstep.
+- `micros()` self-check within **±1 %** of expected; loop timing shows ≥ the rate the
+  control loop needs (≥ a few kHz spare over `SENSOR_UPDATE_DT_US`).
+
+**Abort / rollback:** A target that won't build/flash blocks everything — fix
+toolchain/board config first. Clock/timing error → wrong clock tree config; do not
+proceed (every velocity/PWM number downstream depends on accurate time).
 
 ---
 
-### Gate 4 - Sensor alignment (pole pairs, direction, electrical offset)
+### L1 — Wiring & power integrity
 
-Tie the encoder angle to the electrical angle. This produces the constants that
+**Goal:** Prove every control wire physically goes where `constants.h` says, and the
+enable path truly de-energises the driver. Catch swapped/broken wires **before** any coil
+sees a waveform.
+
+**Entry:** L0 passed.
+
+**Scripts (per axis):**
+- `wiring/gpio_map_x_test.hpp` / `gpio_map_y_test.hpp` — with the DRV8313 **unpowered**
+  (VM off), drive each control pin in turn as plain GPIO: hold `N1` high 2 s, then `N2`,
+  then `N3`, then `EN`, printing `PIN <name>=<pin> HIGH`. Operator probes each MCU pin /
+  DRV8313 input with a multimeter or LED and confirms the *named* net is the one that goes
+  high.
+
+**Instrumentation:** Multimeter/LED on DRV8313 inputs; supply current readouts on 3.3 V,
+12 V (VM), and driver VCC.
+
+**Exit criteria:**
+- Each named pin drives the physically correct DRV8313 input (100 % correspondence, both
+  axes).
+- Rails measure in tolerance: 3.3 V logic, 12 V VM, DRV8313 VCC present.
+- With `EN` low (and later VM on), phases read ≈0 V and the rotor spins freely by hand.
+
+**Abort / rollback:** Any pin→net mismatch → fix wiring or the `constants.h` macro and
+re-run. If `EN` low does **not** de-energise, stop: Layer 5+ would be unsafe.
+
+---
+
+### L2 — Motor phase windings
+
+**Goal:** Prove the three motor windings themselves are healthy and identify A/B/C, before
+blaming firmware for a bad motor or a swapped phase lead.
+
+**Entry:** L1 passed. Motor **disconnected from driver** for the ohmmeter step.
+
+**Procedure (measurement, then a firmware confirmation script):**
+1. **Ohmmeter (motor unplugged):** measure phase-to-phase resistance A-B, B-C, C-A.
+   Expect all three roughly equal and consistent with `GM2804_PHASE_RESISTANCE` (9 Ω
+   line-to-line class); check no winding shorts to the motor case.
+2. `windings/phase_energize_x_test.hpp` / `_y_test.hpp` — with driver powered and a **hard
+   current limit** (≤ 0.4 A), apply a small DC vector to **one phase pair at a time**
+   (e.g. drive `Va` to a low fixed voltage, `Vb=Vc=0`), hold 1 s, print the pair and let
+   the operator confirm the rotor jumps to a detent and holds. Rotate through all three
+   pairs.
+
+**Instrumentation:** Ohmmeter; bench-supply current; hand feel of holding detents.
+
+**Exit criteria:**
+- Three phase resistances within **±15 %** of each other; none shorted to case.
+- Each energised phase pair produces a distinct, stable holding detent; current within the
+  hard limit.
+
+**Abort / rollback:** Unequal/short winding → mechanical/motor fault, replace or rewire
+before any FOC. No detent on a pair → that phase leg (driver half-bridge or lead) is dead
+→ back to L1.
+
+---
+
+### L3 — Encoder integrity (per axis)
+
+**Goal:** The entire controller is built on the encoder angle. If the angle is wrong,
+every later layer is built on sand.
+
+**Entry:** L0–L1 passed. AS5048A on SPI (`SPI_MODE1`, 10 MHz).
+
+**Scripts (per axis):**
+- `sensor/encoder_integrity_x_test.hpp` / `_y_test.hpp` — init the correct `AS5048(CS)`,
+  then in a loop: read raw count + angle, read diagnostics (AGC, magnitude, OCF, COF,
+  compLow/High), and stream `DBG <count>,<angle_rad>,<agc>,<mag>,<ocf>,<cof>`. Also
+  compute and print, at rest, the **angle noise std-dev** over N samples.
+
+**Procedure:** Rotate rotor by hand through a full turn; confirm angle sweeps `0→2π`
+monotonically and wraps cleanly; confirm diagnostics stay healthy; capture rest noise.
+
+**Instrumentation:** Serial stream; optional `UI/` plotter.
+
+**Exit criteria:**
+- Angle tracks a hand rotation cleanly over `0..2π`, correct CPR scaling (one mech rev =
+  `2π`), clean single wrap, monotonic in the turned direction.
+- Parity/error (OCF/COF) fault rate ≈ 0; AGC mid-range (not railed 0 or 255); magnitude in
+  spec → magnet gap correct.
+- Rest angle noise std-dev small and stable (record the number; it bounds later velocity
+  noise).
+
+**Abort / rollback:** Garbage/frozen angle → SPI wiring, CS pin, mode, or clock. Frequent
+parity errors / railed AGC → bus integrity or magnet placement. Do not proceed to torque
+on a flaky encoder.
+
+---
+
+### L4 — Velocity estimate & low-pass filtering (per axis)
+
+**Goal:** Prove `Sensor`'s velocity estimate and the LPF/notch chain are correct and
+tuned, in isolation, before any loop consumes them.
+
+**Entry:** L3 passed.
+
+**Scripts (per axis):**
+- `sensor/velocity_estimate_x_test.hpp` / `_y_test.hpp` — stream
+  `DBG <angle>,<raw_vel>,<filt_vel>` (`getRawAngularVelocity()` vs
+  `getFilteredAngularVelocity()`). Turn the rotor by hand at a roughly steady rate in each
+  direction; then spin fast through the `0/2π` wrap to probe for spikes.
+- `filter/filter_char_x_test.hpp` / `_y_test.hpp` — feed a **known synthetic signal**
+  (step and sinusoid) through `_LowPassFilter` / `NotchFilter` directly (not the motor) and
+  print input vs output to characterise cutoff, lag, and notch depth against
+  `VELOCITY_LOW_PASS_FILTER_TAU`, `ANGLE_LOW_PASS_FILTER_TAU`, `FOC_VOLTAGE_LPF_TAU`,
+  `NOTCH_FILTER_FREQ/Q`.
+
+**Instrumentation:** Serial CSV → plot raw vs filtered.
+
+**Exit criteria:**
+- Raw velocity sign is correct for a known hand direction; magnitude sane
+  (`Δθ/Δt`, gated at `VELOCITY_ESTIMATION_DT_US`).
+- **No spurious spikes at the wrap boundary** (the `findAngularError` wrap handling holds).
+- Filtered velocity is smooth with acceptable lag; chosen `VELOCITY_LOW_PASS_FILTER_TAU`
+  documented with its measured lag/noise trade-off. Notch (if used) attenuates its target
+  band as designed.
+
+**Abort / rollback:** Wrap spikes → velocity math / wrap handling. Excess lag or residual
+noise → retune `tau`; do not paper over it in the loops (Layers 11–12) later.
+
+---
+
+### L5 — PWM signal integrity (per axis)
+
+**Goal:** Prove the three phase duties become correct, safe waveforms at the DRV8313
+inputs — **without** relying on the motor producing useful torque.
+
+**Entry:** L0–L2 passed. **Scope required.**
+
+**Scripts (per axis):**
+- `pwm/pwm_channel_x_test.hpp` / `_y_test.hpp` — construct the correct `PWMDriver*` for the
+  axis; step each channel independently through duty {0, 0.25, 0.5, 0.75, 1.0} while the
+  other two stay at 0, dwelling 2 s each; print `PWM <chan>=<duty>`.
+- `pwm/pwm_center_aligned_x_test.hpp` / `_y_test.hpp` — set a fixed mid-duty on all three
+  and hold, for scope inspection of frequency and alignment; then exercise
+  `disable()`/`EN` low and confirm outputs cut.
+
+**Instrumentation:** Oscilloscope on each phase output.
+
+**Exit criteria:**
+- Scope confirms **25 kHz** on every channel, **center-aligned** counting.
+- Each of the three duties is **independently** controllable 0→100 %, measured.
+- `disable()` / `EN` low cuts all three outputs immediately.
+
+**Abort / rollback:** Wrong frequency / edge-aligned → timer config in `PWMDriverSTM32G4`.
+Channel not independent → pin/timer mapping. This is the last gate before torque math — no
+waveform anomaly may pass.
+
+---
+
+### L6 — PWM synchronisation (per axis + dual)
+
+**Goal:** Prove the three per-motor timers are **frequency- and phase-aligned**
+(`stm32_alignTimers`), and that the two motors use **independent** timer instances with no
+cross-interference.
+
+**Entry:** L5 passed.
+
+**Scripts:**
+- `pwm/pwm_sync_x_test.hpp` / `_y_test.hpp` — after `configure3PWM`, print the resolved
+  timer instance for each of the 3 pins and whether an alignment **master** was found;
+  drive all three at a common duty for scope comparison of edge alignment.
+- `pwm/pwm_sync_dual_test.hpp` — bring up **both** motors; assert the six phase pins
+  resolve to **six distinct timer instances**; run both at mid-duty and scope one phase
+  from each axis for beat/cross-talk.
+
+**Instrumentation:** Scope (multi-channel, phase-to-phase edge alignment); serial dump of
+timer instances.
+
+**Exit criteria:**
+- Per motor: three phases share ARR/frequency and are edge-aligned (no arbitrary phase
+  drift); alignment master reported.
+- Dual: **6 distinct timer instances**; no visible beat/interference when both run.
+
+**Abort / rollback:** "No master timer" warning or phase drift → master selection /
+pin-timer choice (loop within L6). Shared timer between motors → timer-allocation fix
+before hardware sign-off (see [docs/STM32G4_architecture_report.md](STM32G4_architecture_report.md) §4).
+
+---
+
+### L7 — Modulation math: Clarke/Park + midpoint-clamp SVPWM (per axis)
+
+**Goal:** Validate `setPhaseVoltage()` (inverse Park → Clarke → midpoint clamp) as pure
+math and as a waveform, decoupled from the motor turning.
+
+**Entry:** L4 (angle source) and L6 (clean synced PWM) passed.
+
+**Scripts (per axis):**
+- `modulation/modulation_x_test.hpp` / `_y_test.hpp` —
+  1. **Static numeric check:** set `Vd=0`, a fixed `Vq` (e.g. 2 V), a fixed
+     `electrical_angle`, call `setPhaseVoltage()`, and print `Va,Vb,Vc` alongside the
+     independently hand-computed expected values for several angles (0, π/2, π, …). Assert
+     they match.
+  2. **Swept waveform:** with the rotor **mechanically clamped** (held), sweep
+     `electrical_angle` 0→2π slowly at fixed `Vq`; stream `Va,Vb,Vc`. On the scope the
+     line-to-line waveforms are 120°-shifted sinusoids and the phase waveforms show the
+     characteristic midpoint-clamp saddle (third-harmonic injection).
+
+**Instrumentation:** Serial numeric compare; scope on two phases + line-to-line.
+
+**Exit criteria:**
+- Static `Va,Vb,Vc` match hand calculation within float tolerance at every test angle.
+- Swept phases are balanced, 120° apart, clamped within `[0, voltage_limit]`; line-to-line
+  is a clean sinusoid.
+
+**Abort / rollback:** Numeric mismatch → bug in inverse-Park/Clarke/clamp; fix the math
+here, in isolation, not later. Waveform wrong but math right → back to L5/L6.
+
+---
+
+### L8 — Open-loop forced commutation (per axis)
+
+**Goal:** First motion. Drive a **synthesized** rotating electrical angle (encoder
+ignored) to validate **phase wiring order** + **modulation** on the real motor — the two
+things most likely wrong in a fresh build.
+
+**Entry:** L5–L7 passed. Rotor free and unloaded.
+
+**Scripts (per axis):**
+- `motor/open_loop_x_test.hpp` / `_y_test.hpp` — `Vd=0`, fixed modest `Vq` (1.5–2.5 V),
+  ramp `electrical_angle` linearly at a slow rate; stream commanded elec angle and (for
+  reference only) the encoder-implied elec angle + alignment error. Reverse the ramp
+  direction on command.
+
+**Instrumentation:** Serial log; visual rotor observation; scope on two phases.
+
+**Exit criteria:**
+- Smooth rotation (no 60° ratcheting that signals a swapped phase); direction reverses
+  when the commanded ramp reverses.
+- Current stays under `MOTOR_CURRENT_LIMIT` at the chosen `Vq`.
+
+> **Expected caveat:** per [docs/motor_calibration_findings.md](motor_calibration_findings.md),
+> these motors are **stiction-dominated unloaded** and will *ratchet* rather than lock
+> synchronously to a continuously rotating field. The pass bar is "smooth, reversible
+> motion proving phase order + modulation," **not** perfect synchronous lock. Precise
+> alignment is L9's job.
+
+**Abort / rollback:** Cogging/jerk or rotation only one way → two phases swapped: fix
+wiring or pin map and re-test. No torque at all at a valid `Vq`/angle → back to L5–L7.
+
+---
+
+### L9 — Pole pairs, sensor direction, electrical offset (per axis)
+
+**Goal:** Tie encoder angle to electrical angle. Produce the constants
 `calculate_electrical_angle()` depends on:
-`normalise_angle(mechanical_angle * pole_pairs * sensor_direction - electrical_offset)`.
+`normalise_angle(mechanical_angle · pole_pairs · sensor_direction − electrical_offset)`.
 
-- **Entry criteria:** Gates 0-3 passed. Rotor free and unloaded.
-- **Procedure:**
-  1. Confirm `pole_pairs = 7` for the GM2804
-     ([src/motor/GM2804.hpp](../src/motor/GM2804.hpp)).
-  2. Resolve the `sensor_direction` sign by correlating commanded electrical angle (from
-     Gate 3) against measured encoder angle; confirm `SENSOR_DIRECTION = 1` (CCW) holds.
-  3. Run the stiction-bracket autocal
-     ([src/tests/sensor/electrical_offset_autocal_test.hpp](../src/tests/sensor/electrical_offset_autocal_test.hpp))
-     to measure `SENSOR_OFFSET_X` / `SENSOR_OFFSET_Y`.
-  4. Write the offsets into [src/utils/constants.h](../src/utils/constants.h) and re-run;
-     confirm `change vs stored offset` collapses to ~0.
-- **Instrumentation:** The autocal's parseable `TGT` lines and per-motor summary
-  (`electrical offset`, `circ_std`, `change vs stored offset`).
-- **Exit criteria:**
-  - `calculate_electrical_angle()` tracks the true field within the inherent ~0.5 rad
-    2nd-harmonic saliency band.
-  - `change vs stored offset` ~= 0 on a verification re-run for both motors.
-  - Stored offsets match the documented values (X = 4.0852, Y = 2.5624) or are
-    re-measured if the mount changed.
-- **Abort / rollback:** High `circ_std` / inconsistent offset -> bracket offset below the
-  stiction dead-band (increase it), or a Gate 1 encoder problem. A sign error here
-  surfaces as a Gate 5 failure - so get the direction right before proceeding.
+**Entry:** L3–L8 passed. Rotor free and unloaded.
 
----
+**Scripts (per axis):**
+- `sensor/pole_pair_dir_x_test.hpp` / `_y_test.hpp` — drive one full **mechanical**
+  revolution open-loop and count electrical cycles / fit the electrical-vs-mechanical
+  slope to confirm `pole_pairs = 7`, and confirm the `sensor_direction` sign by correlating
+  commanded elec angle against measured encoder angle.
+- `sensor/electrical_offset_autocal_x_test.hpp` / `_y_test.hpp` — the **stiction-bracket +
+  circular-mean** autocal (method in
+  [docs/motor_calibration_findings.md](motor_calibration_findings.md)): for targets spread
+  over a full mech rev, approach each electrical angle from below and above, take the
+  circular-mean midpoint, derive the implied offset, average. Print per-target `TGT` lines
+  and a summary (`electrical offset`, `circ_std`, `change vs stored offset`).
 
-### Gate 5 - Closed-loop commutation (torque sign test)
+**Procedure:** Run pole-pair/direction first; then autocal; write the measured offsets into
+[src/utils/constants.h](../src/utils/constants.h) (`SENSOR_OFFSET_X`, `SENSOR_OFFSET_Y`);
+re-run autocal to verify.
 
-First use of the **real encoder angle** to commutate. Prove that a positive `Vq`
-produces torque in a consistent, correct direction - i.e. commutation is genuinely closed
-on the sensor with the right sign and offset.
+**Instrumentation:** The autocal's parseable summary; slope fit from the pole-pair script.
 
-- **Entry criteria:** Gates 0-4 passed (offsets stored and verified).
-- **Procedure:**
-  1. In the rewritten `FOCController`, set `electrical_angle = calculate_electrical_angle()`
-     from the live sensor, `Vd = 0`, and apply a small fixed `Vq > 0` directly (bypass the
-     PID loops for this gate).
-  2. Confirm the rotor develops torque in one consistent direction; gently perturb it and
-     confirm it pushes back / holds.
-  3. Flip the sign of `Vq`; confirm the torque direction flips.
-- **Instrumentation:** Serial stream of `mechanical_angle`, `electrical_angle`, `Vq`, and
-  bench-supply current.
-- **Exit criteria:**
-  - `+Vq` -> consistent torque in the expected direction; `-Vq` -> opposite. No runaway.
-  - Holding torque is stable (rotor returns toward / resists displacement, not driven
-    away).
-  - Current stays under `MOTOR_CURRENT_LIMIT`.
-- **Abort / rollback:** Torque in the wrong direction or runaway -> wrong
-  `sensor_direction` sign or offset: loop back to **Gate 4**. Weak/erratic torque ->
-  re-check Gates 2-3.
+**Exit criteria:**
+- Measured `pole_pairs = 7`; `sensor_direction = +1` confirmed (or corrected).
+- `calculate_electrical_angle()` tracks the true field within the inherent ~±0.5 rad
+  2nd-harmonic saliency band.
+- On a **verification re-run**, `change vs stored offset ≈ 0` for the axis; stored offset
+  matches the physically measured value.
+
+**Abort / rollback:** High `circ_std` / inconsistent offset → bracket offset below the
+stiction dead-band (increase `BRACKET_OFFSET`), or an L3 encoder problem. A direction sign
+error surfaces as an L10 failure — get the sign right here.
 
 ---
 
-### Gate 6 - Velocity loop
+### L10 — Closed-loop commutation sign / torque test (per axis)
 
-Close the inner control loop: velocity error -> PI -> `estimate_Vq` -> `Vq`.
+**Goal:** First use of the **real encoder angle** to commutate. Prove `+Vq` yields
+torque in a consistent, correct direction — commutation is genuinely closed on the sensor
+with the right sign and offset.
 
-- **Entry criteria:** Gates 0-5 passed. Controller commutates correctly under fixed `Vq`.
-- **Procedure:**
-  1. Enable the velocity PI controller (`PID_velocity_controller`) feeding
-     `target_q_current` -> `estimate_Vq()` -> `Vq` (the existing topology in
-     [src/foc_controller/FOCController.cpp](../src/foc_controller/FOCController.cpp)).
-  2. Start with `VELOCITY_P`/`VELOCITY_I`/`VELOCITY_D` from
-     [src/utils/tweakable_params.h](../src/utils/tweakable_params.h); tune from a low gain
-     upward.
-  3. Command velocity steps and ramps; observe tracking, overshoot, settle, steady-state
-     error. Use the PID test rig as a reference
-     ([src/tests/motor/pid_test.hpp](../src/tests/motor/pid_test.hpp)).
-- **Instrumentation:** Serial stream of `target_velocity`, `angular_velocity`,
-  `velocity_error`, `Vq`; plot step responses.
-- **Exit criteria:**
-  - Tracks velocity setpoints within an agreed tolerance, both directions.
-  - Settles without sustained oscillation or limit-cycle; no current-limit chatter.
-  - `Vq` and current remain within limits across the operating range.
-- **Abort / rollback:** Oscillation that won't tune out -> re-check velocity estimation
-  (Gate 1 filtering / `VELOCITY_LOW_PASS_FILTER_TAU`) and commutation sign (Gate 5).
+**Entry:** L9 passed (offsets stored and verified).
 
----
+**Scripts (per axis):**
+- `foc/torque_sign_x_test.hpp` / `_y_test.hpp` — set
+  `electrical_angle = calculate_electrical_angle()` from the live sensor each loop, `Vd=0`,
+  and apply a **small fixed `Vq`** directly (bypass both PIDs). Stream
+  `mechanical_angle, electrical_angle, Vq` + supply current. Flip `Vq` sign on command.
 
-### Gate 7 - Position (angle) loop
+**Procedure:** Confirm consistent torque direction; gently perturb and confirm it holds /
+pushes back; flip sign, confirm torque reverses.
 
-Close the outer loop: angle error -> PI -> velocity setpoint -> (Gate 6 loop).
+**Instrumentation:** Serial stream; bench-supply current.
 
-- **Entry criteria:** Gate 6 passed (stable velocity loop).
-- **Procedure:**
-  1. Enable the angle PI controller (`PID_angle_controller`) in `ControlMode::ANGLE`,
-     using `findAngularError()` ([src/utils/quick_defs.h](../src/utils/quick_defs.h)) for
-     shortest-path wrap.
-  2. Tune `ANGLE_P`/`ANGLE_I`/`ANGLE_D` from
-     [src/utils/tweakable_params.h](../src/utils/tweakable_params.h), respecting the
-     velocity limits (`VELOCITY_UPPER_LIMIT` / `VELOCITY_LOWER_LIMIT`).
-  3. Command angle steps in both directions, including across the `0`/`2pi` wrap; apply a
-     disturbance and confirm hold.
-- **Instrumentation:** Serial stream of `target_angle`, `mechanical_angle`,
-  `angular_error`, plus the inner-loop signals.
-- **Exit criteria:**
-  - Settles to the target angle within tolerance, both directions, with no sustained
-    oscillation.
-  - Holds position under a modest disturbance.
-  - Wrap is handled correctly (takes the shortest path; no full-turn unwinds).
-- **Abort / rollback:** Instability or wind-up -> loop back to Gate 6 (inner loop must be
-  solid first); check angle wrap handling and integrator limits.
+**Exit criteria:**
+- `+Vq` → consistent torque in the expected direction; `−Vq` → opposite. No runaway.
+- Holding torque stable (rotor resists/returns toward displacement, not driven away).
+- Current under `MOTOR_CURRENT_LIMIT`.
+
+**Abort / rollback:** Wrong direction or runaway → wrong `sensor_direction` or offset:
+back to **L9**. Weak/erratic torque → re-check L5–L8.
 
 ---
 
-### Gate 8 - Dual-axis + system integration
+### L11 — Velocity loop PID (per axis)
 
-Bring up both axes together and integrate with the application layer, on **both** build
-targets.
+**Goal:** Close the inner loop: velocity error → PI → `estimate_Vq` → `Vq`. Tune it.
 
-- **Entry criteria:** Gates 0-7 passed for at least one axis.
-- **Procedure:**
-  1. Repeat Gates 4-7 for the second motor (Y) - offsets are per-motor.
-  2. Wire in the full system: `StateMachine`, `Interface` command listener, and the
-     `SinusoidalScanPath` (as composed in
-     [src/tests/foc/stm32g4_foc_test.hpp](../src/tests/foc/stm32g4_foc_test.hpp)).
-  3. Run the scan path on both motors; exercise enable/disable, mode switches, and the
-     e-stop path.
-  4. Build, flash, and re-validate the integrated system on **both** `stm32g4` and
-     `teensy41`.
-- **Instrumentation:** `Interface::printFOCStatus()` serial telemetry; scan-path plot via
-  `UI/` tools.
-- **Exit criteria:**
-  - Both motors track the scan path simultaneously without interference.
-  - State machine + interface commands behave correctly; e-stop reliably disables drive.
-  - Integrated firmware runs on both targets with identical control behaviour.
-- **Abort / rollback:** Cross-axis interference -> revisit Gate 2 timer allocation. A
-  fault appearing only when integrated -> isolate by disabling subsystems back to a known
-  good gate.
+**Entry:** L10 passed. Commutation correct under fixed `Vq`.
+
+**Scripts (per axis):**
+- `foc/velocity_loop_x_test.hpp` / `_y_test.hpp` — `ControlMode = VELOCITY`; feed velocity
+  step and ramp setpoints; stream `target_velocity, angular_velocity, velocity_error, Vq`.
+  Expose live gain tweaks (`setVelocityP/I/D`, `setVelocityFeedForward`) so tuning is
+  interactive. Start from `VELOCITY_P/I/D` in
+  [src/utils/tweakable_params.h](../src/utils/tweakable_params.h), low gain upward.
+
+**Instrumentation:** Serial CSV → step-response plots.
+
+**Exit criteria:**
+- Tracks velocity setpoints within an agreed tolerance, both directions.
+- Settles with no sustained oscillation/limit-cycle; no current-limit chatter.
+- `Vq` and current within limits across the operating range. Record final gains.
+
+**Abort / rollback:** Oscillation that won't tune out → re-check velocity estimate/LPF
+(L4, `VELOCITY_LOW_PASS_FILTER_TAU`) and commutation sign (L10).
 
 ---
 
-### Gate 9 - Acceptance & regression
+### L12 — Angle (position) loop PID (per axis)
 
-Define "done" quantitatively and lock in the means to detect regressions.
+**Goal:** Close the outer loop: angle error → PI → velocity setpoint → (L11 loop). Tune it.
 
-- **Entry criteria:** Gates 0-8 passed.
-- **Procedure:**
-  1. Agree an acceptance spec: e.g. angle settle time, steady-state error band, velocity
-     tracking tolerance, peak current ceiling, and a soak-test duration.
-  2. Run a sustained soak test on both motors / both targets at representative scan-path
-     load.
-  3. Record the gate harness list (Gates 0-8) as a **regression checklist** to re-run
-     after any change to the control path, encoder mount, or wiring.
-- **Instrumentation:** Telemetry capture over the soak; logged acceptance measurements.
-- **Exit criteria:**
-  - Meets the agreed acceptance spec on both targets.
-  - No faults / drift over the soak period.
-  - Regression checklist documented and reproducible.
-- **Abort / rollback:** Any acceptance miss -> identify the responsible gate and loop
-  back; do not relax the spec to force a pass.
+**Entry:** L11 passed (stable velocity loop).
 
-## 5. Dual-target notes (STM32G4 + Teensy 4.1)
+**Scripts (per axis):**
+- `foc/angle_loop_x_test.hpp` / `_y_test.hpp` — `ControlMode = ANGLE`, using
+  `findAngularError()` for shortest-path wrap; feed angle steps in both directions
+  **including across the `0/2π` wrap**; apply a disturbance and confirm hold. Stream
+  `target_angle, mechanical_angle, angular_error` + inner-loop signals; expose
+  `setAngleP/I/D`. Respect `VELOCITY_UPPER/LOWER_LIMIT`.
 
-- **Shared abstraction is the contract.** All control logic (`FOCController`, PIDs,
-  modulation in `setPhaseVoltage()`) is target-agnostic and sits above the `PWMDriver` and
-  `Sensor` virtual interfaces. Only the adapters differ:
-  `PWMDriverSTM32G4` vs `PWMDriverTeensy41`, both implementing the same
-  `configure3PWM` / `write3PWM` / `stopPwmHardware` / `cleanupParams` hooks.
-- **Per-target gate entry points.**
-  - STM32G4: switch the active test in
-    [src/_stm32g4_main_stub.cpp](../src/_stm32g4_main_stub.cpp), build with
-    `pio run -e stm32g4 --target upload -t monitor`.
-  - Teensy 4.1: call the equivalent harness from the Teensy entry point, build with
-    `pio run -e teensy41 --target upload -t monitor`.
-- **Gates that are target-sensitive:** Gate 2 (timer architecture differs most - the
-  STM32G4 multi-timer 3PWM + `stm32_alignTimers` model has no Teensy analogue) and Gate 8
-  (full integration). Gates 1, 3-7 should behave identically given a correct adapter; any
-  divergence points at the adapter, not the control law.
-- **Build filters:** keep `src/current_sense/` and unrelated `tests/` excluded per the
-  `build_src_filter` settings already in [platformio.ini](../platformio.ini).
+**Instrumentation:** Serial CSV → step-response plots.
 
-## 6. Summary
+**Exit criteria:**
+- Settles to target within tolerance, both directions, no sustained oscillation.
+- Holds position under a modest disturbance.
+- Wrap handled correctly (shortest path; no full-turn unwind). Record final gains.
 
-Working FOC is **guaranteed** not by clever code but by passing, in order, a chain of
-gates each of which isolates exactly one source of failure:
+**Abort / rollback:** Instability/wind-up → back to L11 (inner loop must be solid first);
+check wrap handling and integrator limits.
 
-1. Toolchain + safety, 2. Encoder, 3. PWM/driver waveforms, 4. Modulation math + phase
-order (open loop), 5. Encoder-to-electrical alignment, 6. Closed-loop commutation sign,
-7. Velocity loop, 8. Position loop, 9. Dual-axis integration, 10. Acceptance + regression.
+---
 
-When the motor misbehaves, the failure is - by construction - in the most recent gate
-that was passed without solid evidence. Honour the rules in Section 0, keep the evidence
-log in Section 3, and the rebuilt voltage-mode FOC controller will reach a known-good,
-reproducible end-state on both targets.
+### L13 — Dual-axis simultaneous FOC (final functional gate)
+
+**Goal:** Run full cascade FOC on **both** motors **at once**, integrated with the
+application layer, on both targets.
+
+**Entry:** L0–L12 passed for **both** X and Y independently.
+
+**Script:**
+- `foc/dual_foc_test.hpp` — construct both `FOCController`s (X and Y) with their calibrated
+  offsets, wire in `StateMachine`, `Interface`, and the `SinusoidalScanPath`; run both
+  controllers' `loop()` each iteration; exercise enable/disable, mode switches, and the
+  e-stop path. Stream `Interface::sendDualMotorStatus()` telemetry for both axes.
+
+**Procedure:** Run the scan path on both motors simultaneously; watch for cross-axis
+interference; test e-stop; rebuild and re-validate on **both** `stm32g4` and `teensy41`.
+
+**Instrumentation:** `Interface` telemetry; scan-path plot via `UI/`.
+
+**Exit criteria:**
+- Both motors track the scan path **simultaneously** without interference or timer
+  contention.
+- State machine + interface commands behave; e-stop reliably disables both drives.
+- Identical control behaviour on both targets.
+
+**Abort / rollback:** Cross-axis interference → revisit **L6** timer allocation. A fault
+appearing only when integrated → disable subsystems back to a known-good layer and isolate.
+
+---
+
+### L14 — Acceptance & soak (regression lock-in)
+
+**Goal:** Define "done" quantitatively and lock in regression detection.
+
+**Entry:** L13 passed.
+
+**Script:**
+- `system/soak_test.hpp` — run both axes at representative scan-path load for a sustained
+  period, logging telemetry, peak current, thermals, and any fault trips.
+
+**Exit criteria:**
+- Meets the agreed acceptance spec (settle time, steady-state error band, velocity
+  tracking tolerance, peak current ceiling) on **both** targets.
+- No faults / drift over the soak.
+- The L0–L13 script list is recorded as a **regression checklist** to re-run after any
+  change to the control path, encoder mount, or wiring.
+
+---
+
+## 7. Dual-target notes (STM32G4 ↔ Teensy 4.1)
+
+- **The abstraction is the contract.** All control logic (`FOCController`, PIDs,
+  `setPhaseVoltage()` modulation, velocity estimate) is target-agnostic and sits above the
+  `PWMDriver` and `Sensor` virtual interfaces. Only the adapters differ:
+  `PWMDriverSTM32G4` vs `PWMDriverTeensy41`, both implementing
+  `configure3PWM` / `write3PWM` / `stopPwmHardware` / `cleanupParams`.
+- **Target-sensitive layers:** L5–L6 (timer architecture — the STM32G4 multi-timer 3PWM +
+  `stm32_alignTimers` model has no Teensy analogue) and L13 (full integration). Layers
+  L3–L4, L7–L12 should behave identically given a correct adapter; **any divergence points
+  at the adapter, not the control law.**
+- **Build filters:** keep `src/current_sense/` and unrelated modules excluded per
+  `build_src_filter` in [platformio.ini](../platformio.ini). Update the filters as new
+  `src/tests/` files are added.
+
+---
+
+## 8. Immediate first steps
+
+1. **Unbreak the build.** The entry-point stubs
+   ([src/_stm32g4_main_stub.cpp](../src/_stm32g4_main_stub.cpp),
+   [src/_teensy_main_stub.cpp](../src/_teensy_main_stub.cpp)) still `#include` the deleted
+   harnesses. Trim each to a single active include and update `build_src_filter` so the
+   project compiles again.
+2. **Recreate `src/tests/`** per Section 2.1, starting with `mcu/mcu_alive_test.hpp`.
+3. **Walk L0 → L14 in order**, X then Y for per-axis gates, logging each gate's evidence
+   row (Section 4) before advancing.
+
+---
+
+## 9. Summary
+
+Working FOC is **guaranteed** not by clever code but by passing, in strict order, a chain
+of small, readable gates each isolating exactly one source of failure:
+
+L0 MCU/clock → L1 wiring → L2 windings → L3 encoder → L4 velocity/LPF → L5 PWM signals →
+L6 PWM sync → L7 modulation math → L8 open-loop commutation → L9 pole-pairs/direction/
+offset → L10 commutation sign → L11 velocity PID → L12 angle PID → **L13 dual-axis FOC** →
+L14 acceptance/soak.
+
+When the motor misbehaves, the fault is — by construction — in the most recent gate passed
+without solid evidence. Honour the rules in Section 0, keep the evidence log, and the
+rebuilt voltage-mode FOC reaches a known-good, reproducible end-state on both targets and
+both axes.
+```

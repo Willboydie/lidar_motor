@@ -1,34 +1,11 @@
-// Entry point for [env:stm32g4] until the full firmware main.cpp is ported.
+// Entry point for [env:stm32g4] — switch the active bring-up test here.
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-#include "tests/foc/stm32g4_foc_test.hpp"
-#include "tests/sensor/electrical_offset_test.hpp"
-#include "tests/motor/stm32g4_open_loop.hpp"
-#include "tests/motor/stm32g4_slow_spin_test.hpp"
-#include "tests/sensor/electrical_offset_accuracy_test.hpp"
-// #include "tests/sensor/electrical_offset_autocal_test.hpp"
-#include "tests/sensor/stm32g4_sensor_test.hpp"
-// #include "tests/current_sense/stm32g4_adc_raw_test.hpp"
-// #include "tests/current_sense/stm32g4_adc_dma_test.hpp"
-// #include "tests/current_sense/stm32g4_adc_dma_dual_test.hpp"
-// #include "tests/current_sense/stm32g4_vq_rotate_trgo_test.hpp"
-// #include "tests/ldm/stm32g4_ldm_test.hpp"
-// #include "tests/sensor/electrical_geometry_test.hpp"
+#include "tests/modulation/modulation_l7_test.hpp"
 
 void setup() {
-  // stm32g4_foc_test();
-  // electrical_offset_test();
-  // stm32g4_open_loop();
-  // stm32g4_slow_spin_test();
-  // electrical_offset_accuracy_test();
-  // electrical_offset_autocal_test();
-  stm32g4_sensor_test();
-  // stm32g4_adc_raw_test();
-  // stm32g4_adc_dma_test();
-  // stm32g4_adc_dma_dual_test();
-  // stm32g4_vq_rotate_trgo_test();
-  // stm32g4_ldm_test();
+    modulation_l7_test();
 }
 
 void loop() {}
