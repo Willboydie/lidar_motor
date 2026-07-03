@@ -2,11 +2,11 @@
 #if defined(ARDUINO_TEENSY41)
 
 #include <Arduino.h>
-// L10 — closed-loop commutation sign / torque test (real encoder commutation).
-#include "tests/foc/torque_sign_l10_test.hpp"
+// L14 — angle (position) loop PID (Teensy skips L11/L12; inner loop = estimate_Vq voltage model).
+#include "tests/foc/angle_loop_l14_test.hpp"
 
 void setup() {
-    torque_sign_l10_test();
+    angle_loop_l14_test();
 }
 
 void loop() {}

@@ -7,14 +7,18 @@
 #include "../pid_control/PIDControl.hpp"
 #include "../motor/Motor.hpp"
 #include "../filter/LowPassFilter.hpp"
+#include "../current_sense/InlineCurrentSense.hpp"
 #include "../utils/constants.h"
 #include "../utils/quick_defs.h"
 #include "../utils/tweakable_params.h"
 #include "../state_machine/StateMachine.hpp"
 
-// constexpr unsigned long VELOCITY_DT_US  = (1000000UL / VELOCITY_LOOP_HZ);
-// constexpr unsigned long ANGLE_DT_US     = (1000000UL / ANGLE_LOOP_HZ);
-// constexpr unsigned long CURRENT_DT_US   = (1000000UL / CURRENT_LOOP_HZ);
+// Cascaded-loop periods [us], derived from the editable rates in tweakable_params.h.
+// loop() runs the whole cascade at (at most) the current-loop rate and gates the
+// velocity/angle stages down to their own rates off micros().
+constexpr uint32_t CURRENT_LOOP_DT_US  = 1000000UL / CURRENT_LOOP_HZ;
+constexpr uint32_t VELOCITY_LOOP_DT_US = 1000000UL / VELOCITY_LOOP_HZ;
+constexpr uint32_t ANGLE_LOOP_DT_US    = 1000000UL / ANGLE_LOOP_HZ;
 
 class FOCController {
 public:
@@ -67,6 +71,22 @@ public:
     void setFOCVoltageLPFTau(float _foc_voltage_lpf_tau) { LPF_voltage.setTau(_foc_voltage_lpf_tau); }
     void setVelocityFeedForward(float gain) { K_vff = gain; }
 
+    // Inner current-loop PI gains (STM32G4 measured-current control; no-op path on
+    // targets without current sensing). Exposed for live tuning in the L12 bench test.
+    void setCurrentP(float _p) { PID_current_q.setP(_p); PID_current_d.setP(_p); }
+    void setCurrentI(float _i) { PID_current_q.setI(_i); PID_current_d.setI(_i); }
+    void setCurrentD(float _d) { PID_current_q.setD(_d); PID_current_d.setD(_d); }
+
+    // Attach the inline current sense (STM32G4). When set, the inner loop closes a
+    // measured-current PI (Vd/Vq from PI on Iq/Id error); when null, or on targets
+    // without sensing, the inner loop falls back to the estimate_Vq voltage model.
+    void setCurrentSense(InlineCurrentSense& cs) { current_sense = &cs; }
+
+    // L12 bench helper: run one inner current-loop step against a commanded Iq/Id,
+    // bypassing the velocity/angle cascade. Reads the live encoder, commutates off
+    // it, runs the current loop and drives the phases. Returns false on sensor fault.
+    bool currentLoopStep(float iq_target, float id_target = 0.0f);
+
     void setVq(float _Vq) { Vq = _Vq; }
     void setVd(float _Vd) { Vd = _Vd; }
     void setElectricalAngle(float _electrical_angle) { electrical_angle = _electrical_angle; }
@@ -89,6 +109,10 @@ private:
     // void setPhaseVoltage();
     float calculate_electrical_angle();
 
+    // Innermost cascade stage. Compile-time selected: STM32G4 closes a measured-
+    // current PI (Vd/Vq); other targets use the estimate_Vq voltage model.
+    void currentLoop();
+
     float calibrateLoopPeriod(uint16_t num_samples);
     void setLoopPeriod();
     
@@ -105,10 +129,10 @@ private:
     float target_q_current;
     float target_d_current = 0.0f;  // set to zero while not current sensing
 
-    // uint32_t last_current_us  = 0;
-    // uint32_t last_velocity_us = 0;
-    // uint32_t last_angle_us    = 0;
-    // uint32_t last_sensor_update_us = 0;
+    // Cascade rate-gating timestamps [us].
+    uint32_t last_current_us  = 0;
+    uint32_t last_velocity_us = 0;
+    uint32_t last_angle_us    = 0;
 
     // FOC Key Values
     float Iq = 0.0f;
@@ -130,6 +154,13 @@ private:
     // PID controllers
     PIDControl PID_angle_controller{ANGLE_P, ANGLE_I, ANGLE_D, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT}; // angular error -> target velocity
     PIDControl PID_velocity_controller{VELOCITY_P, VELOCITY_I, VELOCITY_D, VELOCITY_RAMP, CURRENT_LOWER_LIMIT, CURRENT_UPPER_LIMIT};  // velocity error -> target q current
+    // Inner current PI: current error [A] -> phase voltage [V] (STM32G4). Output
+    // limited to the voltage rail so anti-windup clamps the integral in volts.
+    PIDControl PID_current_q{CURRENT_P, CURRENT_I, CURRENT_D, CURRENT_RAMP, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT};
+    PIDControl PID_current_d{CURRENT_P, CURRENT_I, CURRENT_D, CURRENT_RAMP, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT};
+
+    // Inline current sense (STM32G4). Null on targets without sensing -> voltage model.
+    InlineCurrentSense* current_sense = nullptr;
 
     _LowPassFilter LPF_voltage{FOC_VOLTAGE_LPF_TAU};
 

@@ -11,6 +11,14 @@
 #define CURRENT_UPPER_LIMIT MOTOR_CURRENT_LIMIT
 #define CURRENT_LOWER_LIMIT -MOTOR_CURRENT_LIMIT
 // -------------------------------------------------
+// Inner current-loop PI (STM32G4 only — measured-current Vd/Vq control).
+// Output is a phase voltage [V], clamped to MOTOR_VOLTAGE_LIMIT (anti-windup).
+// Conservative starting point; tune live in the L12 current-PI bench test.
+#define CURRENT_P 1.0f      // V per A of current error
+#define CURRENT_I 50.0f     // V per (A*s) — the workhorse against R*I drop
+#define CURRENT_D 0.0f
+#define CURRENT_RAMP 0.0f
+// -------------------------------------------------
 #define ANGLE_P 1.0f
 #define ANGLE_I 0.5f
 #define ANGLE_D 0.0f
@@ -65,9 +73,12 @@
 #define ACS712_MV_PER_AMP (185.0f * 3.3f / 5.0f) // = 122.1 mV/A at the ADC pin
 
 // FOC Timing
-// #define ANGLE_LOOP_HZ     50000
-// #define VELOCITY_LOOP_HZ   50000
-// #define CURRENT_LOOP_HZ   50000
+// Cascaded-loop rates. loop() is called as fast as the superloop allows and each
+// cascade stage is rate-gated off micros() to these targets (standard FOC layout:
+// fast inner current loop, slower velocity, slowest outer angle). Edit freely.
+#define CURRENT_LOOP_HZ  20000 // innermost: commutation + current PI / voltage model
+#define VELOCITY_LOOP_HZ  5000 // middle: velocity error -> target q current
+#define ANGLE_LOOP_HZ     1000 // outermost: angle error -> target velocity
 #define SENSOR_UPDATE_DT_US 5 // the update rate of the AS5048, 11250Hz
 #define VELOCITY_ESTIMATION_DT_US 89
 #define VELOCITY_ESTIMATE_N (VELOCITY_ESTIMATION_DT_US / SENSOR_UPDATE_DT_US)

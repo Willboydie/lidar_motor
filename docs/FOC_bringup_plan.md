@@ -30,16 +30,19 @@ evidence.
 
 ### End-state definition (scope)
 
-- **Voltage-mode FOC.** Commutation closes on the AS5048 magnetic encoder. Torque is
-  commanded by computing a phase voltage `Vq` from a motor model
-  (`estimate_Vq()` in [src/foc_controller/FOCController.cpp](../src/foc_controller/FOCController.cpp)),
-  **not** from a measured-current PI loop. There is **no current feedback** in the final
-  controller. `src/current_sense/` stays excluded from both builds.
-- **Control topology.** Cascade: angle loop → velocity loop → `estimate_Vq` → inverse
-  Park → Clarke → midpoint-clamp SVPWM → `PWMDriver::setPwm()`.
+- **Dual-target control topology.**
+  - **STM32G4 (production):** measured-current FOC. Cascade: angle loop (1 kHz) → velocity
+    loop (5 kHz) → **current PI** (20 kHz, measured Iq/Id via `InlineCurrentSenseSTM32G4`)
+    → inverse Park → Clarke → midpoint-clamp SVPWM → `PWMDriver::setPwm()`.
+  - **Teensy 4.1 (parity):** voltage-mode FOC. Same cascade rates, but the inner loop uses
+    `estimate_Vq()` (motor R/Kv model) — **no current feedback**. `src/current_sense/`
+    is not used on Teensy builds.
+- **Loop rates** (editable in `src/utils/tweakable_params.h`): current 20 kHz, velocity
+  5 kHz, angle 1 kHz. `FOCController::loop()` rate-gates each stage off `micros()`.
 - **Dual-target.** Primary bench target is the **STM32G4 Nucleo** (`[env:stm32g4]`).
   Every axis-agnostic layer is also re-validated on **Teensy 4.1** (`[env:teensy41]`)
-  through the shared `PWMDriver` / `Sensor` interfaces.
+  through the shared `PWMDriver` / `Sensor` interfaces. **Teensy skips L11–L12** (no
+  inline current sense) and advances L10 → L13.
 - **Dual-axis.** Motors **X** and **Y** are brought up with **separate, duplicated** test
   scripts (`*_x_test.hpp` / `*_y_test.hpp`) run one at a time. The **final** gate runs
   full cascade FOC on **both axes simultaneously**.
@@ -101,7 +104,9 @@ src/tests/
               pwm_sync_dual_test.hpp
   modulation/ modulation_x_test.hpp,     modulation_y_test.hpp
   motor/      open_loop_x_test.hpp,      open_loop_y_test.hpp
+  current_sense/ current_sense_x_test.hpp, current_sense_y_test.hpp
   foc/        torque_sign_x_test.hpp,    torque_sign_y_test.hpp
+              current_loop_pi_x_test.hpp, current_loop_pi_y_test.hpp
               velocity_loop_x_test.hpp,  velocity_loop_y_test.hpp
               angle_loop_x_test.hpp,     angle_loop_y_test.hpp
               dual_foc_test.hpp
@@ -200,19 +205,24 @@ flowchart TD
     L7 --> L8["L8 Open-loop forced commutation"]
     L8 --> L9["L9 Pole pairs, direction, electrical offset"]
     L9 --> L10["L10 Closed-loop commutation sign"]
-    L10 --> L11["L11 Velocity loop PID"]
-    L11 --> L12["L12 Angle loop PID"]
-    L12 --> L13["L13 Dual-axis simultaneous FOC"]
-    L13 --> L14["L14 Acceptance & soak"]
+    L10 --> L11["L11 Current-sense capture (G4 only)"]
+    L11 --> L12["L12 Current-target PI (G4 only)"]
+    L10 -. "Teensy: skip L11-L12" .-> L13
+    L12 --> L13["L13 Velocity loop PID"]
+    L13 --> L14["L14 Angle loop PID"]
+    L14 --> L15["L15 Dual-axis simultaneous FOC"]
+    L15 --> L16["L16 Acceptance & soak"]
 
     L8 -. "fail: phase order / modulation" .-> L7
     L10 -. "fail: sign / offset" .-> L9
-    L12 -. "fail: instability" .-> L11
+    L12 -. "fail: current PI" .-> L11
+    L14 -. "fail: instability" .-> L13
     L6 -. "fail: timer alloc" .-> L6
 ```
 
-Layers **L1–L13 are run per-axis** (X first, then Y, via the duplicated scripts) except
-where marked "dual". **L13 is the only inherently simultaneous gate.**
+Layers **L1–L15 are run per-axis** (X first, then Y, via the duplicated scripts) except
+where marked "dual". **L11–L12 are STM32G4 only** (inline current sense). **Teensy skips
+L11–L12** after L10 and proceeds directly to L13. **L15 is the only inherently simultaneous gate.**
 
 ---
 
@@ -564,18 +574,79 @@ back to **L9**. Weak/erratic torque → re-check L5–L8.
 
 ---
 
-### L11 — Velocity loop PID (per axis)
+### L11 — Inline current-sense system validation (per axis, **STM32G4 only**)
 
-**Goal:** Close the inner loop: velocity error → PI → `estimate_Vq` → `Vq`. Tune it.
+**Goal:** Prove the ACS712 + ADC/TRGO/DMA inline current sense **captures** honestly —
+offsets, baseline noise, fixed-vector response, and sinusoidal capture — **before** any
+current-target PI (L12) or velocity loop (L13) trusts measured Iq/Id.
 
-**Entry:** L10 passed. Commutation correct under fixed `Vq`.
+**Entry:** L10 passed on G4. Current-sense hardware validated on bench (ACS712 shield,
+PA0/PA4 motor X, PA1/PB0 motor Y).
+
+**Scripts (per axis, G4 only):**
+- `current_sense/current_sense_x_test.hpp` / `_y_test.hpp` — three checks in order:
+  1. **Baseline:** `calibrateOffsets()` at `setPwm(0,0,0)`; capture phase-current means
+     at zero drive; offsets must be 1.60–1.70 V; DMA conv count advancing.
+  2. **Fixed vector:** `Vd=0`, fixed `Vq`, stationary electrical angle at several
+     positions; `getFOCCurrents()` at the commanded angle → `Iq ≈ Vq/R`, `Id ≈ 0`.
+  3. **Sinusoid:** ramp commanded electrical angle at fixed `Vq`; balanced 120°-shifted
+     phase currents; `Iq/Id` track at the commanded angle.
+
+**Instrumentation:** Serial CSV (`DBG`, `BASELINE`, `FIXPT` lines); optional scope on
+ADC probe pin.
+
+**Exit criteria:**
+- Offsets in 1.60–1.70 V; DMA sampling valid (conv count moving, samples not railed).
+- Baseline |mean(i_a)|, |mean(i_b)| < ~0.10 A.
+- Fixed/sinusoid: measured Iq tracks Vq/R within tolerance; Id ~ 0; |i_a+i_b+i_c| ~ 0;
+  all under `MOTOR_CURRENT_LIMIT`.
+
+**Abort / rollback:** Stuck/railed ADC, no DMA movement, or Iq not following the field
+→ fix ADC/DMA/wiring here. Do not proceed to L12.
+
+> **Teensy 4.1:** **SKIP L11** — no inline current sense. Proceed L10 → L13.
+
+---
+
+### L12 — Current-target PI validation (per axis, **STM32G4 only**)
+
+**Goal:** Close the inner measured-current PI: commanded Iq/Id → PI → Vd/Vq →
+`setPhaseVoltage()`, commutating off the live encoder. L10 proved commutation sign;
+L11 proved capture. This gate proves the **PI tracks current targets**.
+
+**Entry:** L11 passed (capture validated).
+
+**Scripts (per axis, G4 only):**
+- `foc/current_loop_pi_x_test.hpp` / `_y_test.hpp` — `FOCController::currentLoopStep()`
+  bypasses velocity/angle cascade. Feed Iq steps and ramps; stream
+  `iq_cmd, Iq_meas, Id_meas, Vq, Vd`. Tune `CURRENT_P/I` live (`p`/`i` keys).
+
+**Instrumentation:** Serial CSV → step-response plots.
+
+**Exit criteria:**
+- Measured Iq tracks commanded Iq within tolerance, both signs.
+- Id stays near 0; Vq/Vd and phase current under limits; no runaway oscillation.
+- Record final `CURRENT_P/I` in `tweakable_params.h`.
+
+**Abort / rollback:** Iq diverges or oscillates uncontrollably → back to L11 (capture)
+or L10 (commutation sign).
+
+> **Teensy 4.1:** **SKIP L12** — inner loop is `estimate_Vq` voltage model.
+
+---
+
+### L13 — Velocity loop PID (per axis)
+
+**Goal:** Close the middle cascade: velocity error → PI → `target_q_current` → inner
+current loop (G4: measured PI from L12; Teensy: `estimate_Vq` voltage model). Tune it.
+
+**Entry:** L12 passed on G4, **or** L10 passed on Teensy (skips L11–L12).
 
 **Scripts (per axis):**
 - `foc/velocity_loop_x_test.hpp` / `_y_test.hpp` — `ControlMode = VELOCITY`; feed velocity
-  step and ramp setpoints; stream `target_velocity, angular_velocity, velocity_error, Vq`.
-  Expose live gain tweaks (`setVelocityP/I/D`, `setVelocityFeedForward`) so tuning is
-  interactive. Start from `VELOCITY_P/I/D` in
-  [src/utils/tweakable_params.h](../src/utils/tweakable_params.h), low gain upward.
+  step and ramp setpoints; stream `target_velocity, angular_velocity, velocity_error,
+  target_q_current, Vq`. Expose live gain tweaks (`p`/`i` keys). Start from
+  `VELOCITY_P/I/D` in [src/utils/tweakable_params.h](../src/utils/tweakable_params.h).
 
 **Instrumentation:** Serial CSV → step-response plots.
 
@@ -585,15 +656,16 @@ back to **L9**. Weak/erratic torque → re-check L5–L8.
 - `Vq` and current within limits across the operating range. Record final gains.
 
 **Abort / rollback:** Oscillation that won't tune out → re-check velocity estimate/LPF
-(L4, `VELOCITY_LOW_PASS_FILTER_TAU`) and commutation sign (L10).
+(L4, `VELOCITY_LOW_PASS_FILTER_TAU`), inner loop (L12 on G4 / L10 on Teensy), and
+commutation sign (L10).
 
 ---
 
-### L12 — Angle (position) loop PID (per axis)
+### L14 — Angle (position) loop PID (per axis)
 
-**Goal:** Close the outer loop: angle error → PI → velocity setpoint → (L11 loop). Tune it.
+**Goal:** Close the outer loop: angle error → PI → velocity setpoint → (L13 loop). Tune it.
 
-**Entry:** L11 passed (stable velocity loop).
+**Entry:** L13 passed (stable velocity loop).
 
 **Scripts (per axis):**
 - `foc/angle_loop_x_test.hpp` / `_y_test.hpp` — `ControlMode = ANGLE`, using
@@ -609,17 +681,17 @@ back to **L9**. Weak/erratic torque → re-check L5–L8.
 - Holds position under a modest disturbance.
 - Wrap handled correctly (shortest path; no full-turn unwind). Record final gains.
 
-**Abort / rollback:** Instability/wind-up → back to L11 (inner loop must be solid first);
+**Abort / rollback:** Instability/wind-up → back to L13 (inner loop must be solid first);
 check wrap handling and integrator limits.
 
 ---
 
-### L13 — Dual-axis simultaneous FOC (final functional gate)
+### L15 — Dual-axis simultaneous FOC (final functional gate)
 
 **Goal:** Run full cascade FOC on **both** motors **at once**, integrated with the
 application layer, on both targets.
 
-**Entry:** L0–L12 passed for **both** X and Y independently.
+**Entry:** L0–L14 passed for **both** X and Y independently.
 
 **Script:**
 - `foc/dual_foc_test.hpp` — construct both `FOCController`s (X and Y) with their calibrated
@@ -636,18 +708,18 @@ interference; test e-stop; rebuild and re-validate on **both** `stm32g4` and `te
 - Both motors track the scan path **simultaneously** without interference or timer
   contention.
 - State machine + interface commands behave; e-stop reliably disables both drives.
-- Identical control behaviour on both targets.
+- Identical control behaviour on both targets (modulo G4 current PI vs Teensy voltage model).
 
 **Abort / rollback:** Cross-axis interference → revisit **L6** timer allocation. A fault
 appearing only when integrated → disable subsystems back to a known-good layer and isolate.
 
 ---
 
-### L14 — Acceptance & soak (regression lock-in)
+### L16 — Acceptance & soak (regression lock-in)
 
 **Goal:** Define "done" quantitatively and lock in regression detection.
 
-**Entry:** L13 passed.
+**Entry:** L15 passed.
 
 **Script:**
 - `system/soak_test.hpp` — run both axes at representative scan-path load for a sustained
@@ -657,7 +729,7 @@ appearing only when integrated → disable subsystems back to a known-good layer
 - Meets the agreed acceptance spec (settle time, steady-state error band, velocity
   tracking tolerance, peak current ceiling) on **both** targets.
 - No faults / drift over the soak.
-- The L0–L13 script list is recorded as a **regression checklist** to re-run after any
+- The L0–L15 script list is recorded as a **regression checklist** to re-run after any
   change to the control path, encoder mount, or wiring.
 
 ---
@@ -669,13 +741,20 @@ appearing only when integrated → disable subsystems back to a known-good layer
   `PWMDriver` and `Sensor` virtual interfaces. Only the adapters differ:
   `PWMDriverSTM32G4` vs `PWMDriverTeensy41`, both implementing
   `configure3PWM` / `write3PWM` / `stopPwmHardware` / `cleanupParams`.
-- **Target-sensitive layers:** L5–L6 (timer architecture — the STM32G4 multi-timer 3PWM +
-  `stm32_alignTimers` model has no Teensy analogue) and L13 (full integration). Layers
-  L3–L4, L7–L12 should behave identically given a correct adapter; **any divergence points
-  at the adapter, not the control law.**
-- **Build filters:** keep `src/current_sense/` and unrelated modules excluded per
-  `build_src_filter` in [platformio.ini](../platformio.ini). Update the filters as new
-  `src/tests/` files are added.
+- **Inner-loop fork (intentional):** On STM32G4, `FOCController::currentLoop()` closes a
+  measured-current PI via `InlineCurrentSenseSTM32G4` when `setCurrentSense()` is called.
+  On Teensy 4.1 (and G4 without current sense attached), it falls back to the
+  `estimate_Vq()` voltage model. Compile-time `#if defined(STM32G4xx)` selects the path.
+- **Bring-up path divergence:** STM32G4 runs **L11** (current-sense capture) and **L12**
+  (current-target PI) between L10 and L13. Teensy **skips L11–L12** (no inline sensing)
+  and proceeds L10 → L13.
+- **Target-sensitive layers:** L5–L6 (timer architecture), L11–L12 (current sense, G4 only),
+  and L15 (full integration). Layers L3–L4, L7–L10, L13–L14 should behave identically
+  given a correct adapter; **any divergence points at the adapter or the inner-loop fork,
+  not the velocity/angle control law.**
+- **Build filters:** `src/current_sense/` is included in `[env:stm32g4]` bench builds;
+  Teensy excludes `current_sense/stm32g4/` and `tests/current_sense/`. Update filters as
+  new `src/tests/` files are added.
 
 ---
 
@@ -699,8 +778,10 @@ of small, readable gates each isolating exactly one source of failure:
 
 L0 MCU/clock → L1 wiring → L2 windings → L3 encoder → L4 velocity/LPF → L5 PWM signals →
 L6 PWM sync → L7 modulation math → L8 open-loop commutation → L9 pole-pairs/direction/
-offset → L10 commutation sign → L11 velocity PID → L12 angle PID → **L13 dual-axis FOC** →
-L14 acceptance/soak.
+offset → L10 commutation sign → **L11 current-sense capture (G4)** → **L12 current PI (G4)**
+→ L13 velocity PID → L14 angle PID → **L15 dual-axis FOC** → L16 acceptance/soak.
+
+(Teensy: L10 → L13, skipping L11–L12.)
 
 When the motor misbehaves, the fault is — by construction — in the most recent gate passed
 without solid evidence. Honour the rules in Section 0, keep the evidence log, and the

@@ -2,11 +2,11 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-// L10 — closed-loop commutation sign / torque test (real encoder commutation).
-#include "tests/foc/torque_sign_l10_test.hpp"
+// L14 — angle (position) loop PID (ANGLE mode, full cascade, shortest-path wrap).
+#include "tests/foc/angle_loop_l14_test.hpp"
 
 void setup() {
-    torque_sign_l10_test();
+    angle_loop_l14_test();
 }
 
 void loop() {}
