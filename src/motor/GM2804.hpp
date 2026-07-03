@@ -6,10 +6,10 @@
 #include "Arduino.h"
 
 #define GM2804_POLE_PAIRS 7
-#define GM2804_PHASE_RESISTANCE 9.0f
+#define GM2804_PHASE_RESISTANCE 8.125f
 #define GM2804_K_V 169.0f
 #define GM2804_K_E 0.057f
-#define GM2804_SENSOR_DIRECTION 1 // CCW = 1, CW = -1. GM2804 with AS5048A is CCW.
+#define GM2804_SENSOR_DIRECTION -1 // CCW = 1, CW = -1. Measured -1 by L9 pole-pair/dir (X slope -6.998, Y -7.006).
 
 class GM2804 : public Motor {
 public:

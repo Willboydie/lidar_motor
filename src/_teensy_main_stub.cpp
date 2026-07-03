@@ -2,10 +2,11 @@
 #if defined(ARDUINO_TEENSY41)
 
 #include <Arduino.h>
-#include "tests/modulation/modulation_l7_test.hpp"
+// L10 — closed-loop commutation sign / torque test (real encoder commutation).
+#include "tests/foc/torque_sign_l10_test.hpp"
 
 void setup() {
-    modulation_l7_test();
+    torque_sign_l10_test();
 }
 
 void loop() {}

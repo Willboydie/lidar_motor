@@ -70,22 +70,22 @@
 #endif
 
 // Motor
-#define MOTOR_VOLTAGE_LIMIT 12.0f
+#define MOTOR_VOLTAGE_LIMIT 6.5f
 #define MOTOR_CURRENT_LIMIT 0.8f
 #define VOLTAGE_POWER_SUPPLY 12.0f
-#define SENSOR_DIRECTION 1 // CCW = 1, CW = -1. GM2804 with AS5048A is CCW.
+#define SENSOR_DIRECTION -1 // CCW = 1, CW = -1. Measured -1 by L9 pole-pair/dir (X slope -6.998, Y -7.006).
 
 // Sensor
-// MOTOR X electrical offset: 4.0852 rad  (-> constants.h SENSOR_OFFSET_X)
-// MOTOR Y electrical offset: 2.5624 rad  (-> constants.h SENSOR_OFFSET_Y)
-// Measured by stiction-bracket autocal (harmonic-robust circular mean over a
-// full mech rev). Replaces stale values (1.4240 / 6.1619) that were ~2.66 rad
-// off and caused the estimated field to disagree with the true field.
-
-// MOTOR X electrical offset: 1.4245 rad  (-> constants.h SENSOR_OFFSET_1)
-// MOTOR Y electrical offset: 6.1692 rad  (-> constants.h SENSOR_OFFSET_2)
-#define SENSOR_OFFSET_X  0.63f // electrical offset in radians
-#define SENSOR_OFFSET_Y 6.17f
+// Electrical offsets from the L9.2 stiction-bracket autocal (harmonic-robust circular
+// mean over a full mech rev) with SENSOR_DIRECTION=-1, PLUS a -pi/2 commutation
+// correction (see below). The autocal previously stored the rotor d-axis position of
+// the applied FIELD, which setPhaseVoltage() places 90 deg ahead of electrical_angle;
+// commutation needs the rotor d-axis itself, so the offset is pi/2 smaller. Without
+// this, calculate_electrical_angle() injected d-axis (radial, torque-free) current:
+// same coil current, almost no torque (L10 symptom). Values are the L9.2 means minus
+// pi/2:  X = 3.1802 - pi/2 = 1.6094 rad,  Y = 2.7796 - pi/2 = 1.2088 rad.
+#define SENSOR_OFFSET_X 1.6094f // electrical offset in radians (q-axis corrected)
+#define SENSOR_OFFSET_Y 1.2088f
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 

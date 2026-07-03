@@ -53,6 +53,6 @@ private:
     byte spiCalcEvenParity(word v);
 
     int cs_pin;
-    SPIClass* spi;
+    SPIClass* spi = nullptr;  // null until init(); deinit() guard relies on this
     SPISettings spi_settings;
 };
