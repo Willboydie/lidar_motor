@@ -1,0 +1,29 @@
+Implement two data packet sending mechanisms as methods belonging to the Interface class. Both systems are designed for
+reciept by a host device.
+
+Control Packet and Status Packet.
+Control packet is designed to replace the DataStream class methods and should be sent at 500Hz. This is a hot path providing
+the host with closed loop control capability of the motors / LiDAR module.
+Status packet can run at 10Hz and encapsulates all housekeeping and state machine updates.
+
+The Control packet should be comprised of:
+- Set Angle targets (X and Y)
+- Set Velocity targets
+- Mechanical angle readings
+- Mechanical velocity estimates
+- LDM distance readings
+- Real time LDM acquisition rate
+- Distance reading associated mechanical angles.
+
+The Status packet should be comprised of:
+- Enabled/Disabled flag
+- The set PID controller tuning values
+- The set filtering tau values and feed forward parameters
+- System health
+- Any errors
+
+V1 Limitations
+The current system does not have system health checks or proper error message handling, thus V1 leaves these out of the Status
+packet.
+Neither is LDM acquisition rate currently gettable. V1 thus leaves that out of the control packet. It uses the logic in
+DataStream.calculateAssociatedAngle() to estimate the precise angle estimate associated with the distance measurement.

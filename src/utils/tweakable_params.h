@@ -64,7 +64,9 @@
 #define ACCEL_LIMIT 1000.0f
 
 // Telemetry
-#define FOC_STATUS_PERIOD_MS 5 // period of binary FOCStatusPacket stream to the UI
+#define FOC_STATUS_PERIOD_MS 5 // legacy bench plotter period (dual_foc_test)
+#define CONTROL_PACKET_PERIOD_US UPDATE_PERIOD_US  // 500 Hz closed-loop telemetry
+#define STATUS_PACKET_PERIOD_MS 100                // 10 Hz housekeeping telemetry
 
 // Current sense (SimpleFOC Shield 3.2, ACS712-05B)
 // ACS712-05B is 185 mV/A at the sensor; the shield maps its 0-5 V swing into

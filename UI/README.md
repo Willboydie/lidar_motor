@@ -14,3 +14,10 @@ Firmware text output (Serial.println) appears in the log panel at the bottom.
 
 pip install PySide6 pyqtgraph pyserial
 python foc_plotter.py
+
+## Motor control realtime plotter
+Plots V1 control/status packets (target vs mechanical angles, live tuning).
+The host computes Lissajous setpoints and sends TARGET_1/2 commands; firmware ScanPath is unused.
+See `docs/serial_protocol.md` for packet layouts.
+
+python realtime_plotter.py

@@ -40,6 +40,8 @@ public:
 
     void setVelocityLPFTau(float _tau) { velocityLPF.setTau(_tau); }
     void setAngleLPFTau(float _tau) { angleLPF.setTau(_tau); }
+    float getVelocityLPFTau() const { return velocityLPF.getTau(); }
+    float getAngleLPFTau() const { return angleLPF.getTau(); }
 
 private:
     virtual float getSensorAngle() = 0;

@@ -2,11 +2,11 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-// L14 — angle (position) loop PID (ANGLE mode, full cascade, shortest-path wrap).
-#include "tests/foc/angle_loop_l14_test.hpp"
+// L15 — dual-axis simultaneous FOC (StateMachine + Interface + SinusoidalScanPath).
+#include "tests/foc/dual_foc_test.hpp"
 
 void setup() {
-    angle_loop_l14_test();
+    dual_foc_test();
 }
 
 void loop() {}

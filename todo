@@ -1,27 +1,8 @@
-L10 test showing low/near no torque. Debug.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+Implement S-curve torque shape towards set points.
+Create a System class which is the only class Interface needs.
+Make listener a non-blocking stateful switch machine.
+System health flag
+Error mechanism where errors are passed to the host in the status packet only where there are any!
 
 
 
@@ -50,8 +31,6 @@ LiDAR CONFIG TESTING
 
 I M P R O V E M E N T S
 - LUT interpolation
-- electrical offset test rig
-- correct the sensor direction and find true elec offsets
 - Reduce lag improve reactance (reduce noise) (see above)
 
 

@@ -13,49 +13,6 @@ Interface::Interface(StateMachine& _stateMachine, FOCController& _focController1
 {}
 
 
-void Interface::printFOCStatus(FOCController& focController, Sensor& sensor) {
-    if (!stateMachine.enabled) return;
-    float target_angle = -focController.getTargetAngle();
-
-    Serial.print("Mech A: " + String(focController.getMechanicalAngle(), 3));
-    Serial.print(" | Elec A: " + String(focController.getElectricalAngle(), 3));
-    // Serial.print(" | Tgt A: " + String(focController.getTargetAngle(), 3));
-    // Serial.print(" | A err: " + String(focController.getAngularError(), 3));
-    Serial.print(" | Raw V: " + String(sensor.getRawAngularVelocity(), 3));
-    Serial.print(" | Fil V: " + String(focController.getAngularVelocity(), 3));
-    Serial.print(" | Tgt V: " + String(focController.getTargetVelocity(), 3));
-    // Serial.print(" | V err: " + String(focController.getVelocityError(), 3));
-    // Serial.print(" | Tgt Iq: " + String(focController.getTargetQCurrent(), 3));
-    // Serial.print("  |  Vq: " + String(focController.getVq(), 3));
-    // Serial.print("  |  LDM distance: " + String(ldm.getLatestDistance()));
-    Serial.println();
-}
-
-// Real-time telemetry for both motors in a single packet. Inline phase currents
-// (ABC) come from the current-sense backend; DQ are derived via Clarke+Park at
-// the motor's electrical angle. Va/Vb/Vc are the voltages last sent to the PWM.
-// Not gated on stateMachine.enabled so it can be used in open-loop bench tests.
-void Interface::sendDualMotorStatus() {
-    PhaseCurrent_s i1 = currentSense1.getPhaseCurrents();
-    PhaseCurrent_s i2 = currentSense2.getPhaseCurrents();
-    DQCurrent_s dq1 = currentSense1.getDQCurrents(
-        currentSense1.getABCurrents(i1), focController1.getElectricalAngle());
-    DQCurrent_s dq2 = currentSense2.getDQCurrents(
-        currentSense2.getABCurrents(i2), focController2.getElectricalAngle());
-
-    MotorStatus m1 = makeNormalisedMotorStatus(
-        i1.a, i1.b, i1.c, dq1.d, dq1.q,
-        sensor1.getLatestRotorAngle(), focController1.getElectricalAngle(),
-        focController1.getCommandedElectricalAngle(), focController1.getAngularError(),
-        focController1.getVa(), focController1.getVb(), focController1.getVc());
-    MotorStatus m2 = makeNormalisedMotorStatus(
-        i2.a, i2.b, i2.c, dq2.d, dq2.q,
-        sensor2.getLatestRotorAngle(), focController2.getElectricalAngle(),
-        focController2.getCommandedElectricalAngle(), focController2.getAngularError(),
-        focController2.getVa(), focController2.getVb(), focController2.getVc());
-
-    sendDualMotorStatusPacket(m1, m2);
-}
 
 void Interface::commandListener() {
     if (Serial.available() >= 5) {
@@ -87,12 +44,6 @@ void Interface::processCommand(uint8_t cmd, float data) {
             break;
         case TARGET_2_SET_CMD:
             handleTarget2Set(data);
-            break;
-        case ELECTRICAL_OFFSET_1_SET_CMD:
-            handleElectricalOffset1Set(data);
-            break;
-        case ELECTRICAL_OFFSET_2_SET_CMD:
-            handleElectricalOffset2Set(data);
             break;
         case VELOCITY_P_SET_CMD:
             handleVelocityPSet(data);
@@ -208,27 +159,14 @@ void Interface::handleToggleControlMode() {
 
 
 void Interface::handleTarget1Set(float data) {
-    Serial.println("Setting Motor 1 target to: " + String(data));
     if (stateMachine.controlMode == ANGLE) focController1.setTargetAngle(data);
     else focController1.setTargetVelocity(data);
 }
 
 void Interface::handleTarget2Set(float data) {
-    Serial.println("Setting Motor 2 target to: " + String(data));
     if (stateMachine.controlMode == ANGLE) focController2.setTargetAngle(data);
     else focController2.setTargetVelocity(data);
 }
-
-void Interface::handleElectricalOffset1Set(float data) {
-    focController1.setElectricalOffset(data);
-    Serial.println("Motor 1 electrical offset set to: " + String(focController1.getElectricalOffset(), 4) + " rad");
-}
-
-void Interface::handleElectricalOffset2Set(float data) {
-    focController2.setElectricalOffset(data);
-    Serial.println("Motor 2 electrical offset set to: " + String(focController2.getElectricalOffset(), 4) + " rad");
-}
-
 
 void Interface::handleVelocityPSet(float data) {
     focController1.setVelocityP(data);
@@ -343,5 +281,72 @@ void Interface::handleThetaCentreSet(float data) {
 void Interface::handlePhiCentreSet(float data) {
     scanPath.setPhiCentre(data);
     Serial.println("Phi centre set to: " + String(data));
+}
+
+float Interface::calculateAssociatedAngle(FOCController& focController) {
+    if (focController.angle_tracking_count >= ANGLE_TRACKING_LIMIT) {
+        focController.resetAngleTracking();
+        return 0.0f;
+    }
+    int associated_index = focController.angle_tracking_count / 2;
+    int window_size = focController.angle_tracking_count < ANGLE_TRACKING_WINDOW_SIZE
+        ? focController.angle_tracking_count
+        : ANGLE_TRACKING_WINDOW_SIZE;
+    associated_index = associated_index < ANGLE_TRACKING_LIMIT - window_size
+        ? associated_index
+        : ANGLE_TRACKING_LIMIT - window_size;
+    float associated_angle = 0.0f;
+    for (int i = 0; i < window_size; i++) {
+        associated_angle += focController.angle_tracking[associated_index - window_size / 2 + i];
+    }
+    associated_angle /= window_size;
+    focController.resetAngleTracking();
+    return associated_angle;
+}
+
+void Interface::onLdmDistanceReady() {
+    latest_distance = ldm.getLatestDistance();
+    associated_angle_x = worldToLocal(1, calculateAssociatedAngle(focController1));
+    associated_angle_y = worldToLocal(2, calculateAssociatedAngle(focController2));
+}
+
+void Interface::sendControlPacket() {
+    ControlPacket packet = {
+        CONTROL_PACKET_HEADER,
+        focController1.getTargetAngle(),
+        focController2.getTargetAngle(),
+        focController1.getTargetVelocity(),
+        focController2.getTargetVelocity(),
+        focController1.getMechanicalAngle(),
+        focController2.getMechanicalAngle(),
+        focController1.getAngularVelocity(),
+        focController2.getAngularVelocity(),
+        latest_distance,
+        associated_angle_x,
+        associated_angle_y,
+    };
+    Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
+}
+
+void Interface::sendStatusPacket() {
+    StatusPacket packet = {
+        STATUS_PACKET_HEADER,
+        static_cast<uint8_t>(stateMachine.enabled),
+        static_cast<uint8_t>(stateMachine.controlMode),
+        static_cast<uint8_t>(stateMachine.scanning),
+        focController1.getVelocityP(),
+        focController1.getVelocityI(),
+        focController1.getVelocityD(),
+        focController1.getVelocityRamp(),
+        focController1.getAngleP(),
+        focController1.getAngleI(),
+        focController1.getAngleD(),
+        focController1.getAngleRamp(),
+        sensor1.getVelocityLPFTau(),
+        sensor1.getAngleLPFTau(),
+        focController1.getFOCVoltageLPFTau(),
+        focController1.getVelocityFeedForward(),
+    };
+    Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }
 

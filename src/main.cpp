@@ -1,13 +1,3 @@
-/// test imports
-// #include "tests/sensor/sensor_test.hpp"
-// #include "tests/sensor/finding_offset.hpp"
-// #include "tests/sensor/electrical_offset_test.hpp"
-// #include "tests/driver/driver_test.hpp"
-// #include "tests/scan_path/sine_path_test.hpp"
-// #include "tests/sensor/noise_test.hpp"
-// #include "tests/ldm/ldm_test.hpp"
-// #include "tests/sensor/velocity_spike_test.hpp"
-
 // main imports
 #include "Arduino.h"
 #include "interface/Interface.hpp"
@@ -21,7 +11,6 @@
 #include "utils/tweakable_params.h"
 #include "utils/constants.h"
 #include "ldm/GarminV3HP.hpp"
-#include "data_stream/DataStream.hpp"
 #include "scan_path/ScanPath.hpp"
 
 GarminV3HP ldm = GarminV3HP(GARMIN_SCL, GARMIN_SDA, GARMIN_MODE_PIN);
@@ -38,7 +27,6 @@ InlineCurrentSenseTeensy41 currentSense1;
 InlineCurrentSenseTeensy41 currentSense2;
 SinusoidalScanPath scanPath(THETA_INC, PHI_INC, THETA_AMPLITUDE, PHI_AMPLITUDE, THETA_CENTRE, PHI_CENTRE);
 Interface interface(stateMachine, focController1, focController2, sensor1, sensor2, currentSense1, currentSense2, ldm, scanPath);
-DataStream dataStream(focController1, focController2, ldm, scanPath);
 
 void setup() {
 
@@ -56,47 +44,38 @@ void setup() {
   focController1.calibrate();
   focController2.calibrate();
   Serial.println("Calibrated. Enable to begin.");
-
-  // TESTS  (activate only one at a time)
-  // sensor_test();
-  // motor_test();
-  // driver_test();
-  // sensor_offset_test();
-  // electrical_offset_test();
-  // pid_test();
-  // ldm_test();
-  // i2c_test();
-  // sine_path_test();
-  // noise_test();
-  // ldm_test();
-  // velocity_spike_test();
 }
 
 void loop() {
   static unsigned long cmdTime = millis();
+  static unsigned long controlTime = micros();
+  static unsigned long statusTime = millis();
+
   if (millis() - cmdTime > 200) {
     cmdTime = millis();
     interface.commandListener();
-    if ( stateMachine.enabled ) {
-      interface.printFOCStatus(focController1, sensor1);
-    }
   }
 
-  if ( stateMachine.enabled ) {
-    if ( stateMachine.scanning ) {
-      scanPath.update();
-      focController1.setTargetAngle(scanPath.theta);
-      focController2.setTargetAngle(scanPath.phi);
-    }
+  if (stateMachine.enabled) {
     focController1.loop();
     focController2.loop();
-    if ( ldm.isDataReady() ) {
+
+    if ((uint32_t)(micros() - controlTime) >= CONTROL_PACKET_PERIOD_US) {
+      controlTime = micros();
+      interface.sendControlPacket();
+    }
+
+    if (millis() - statusTime >= STATUS_PACKET_PERIOD_MS) {
+      statusTime = millis();
+      interface.sendStatusPacket();
+    }
+
+    if (ldm.isDataReady()) {
       ldm.triggerMeasurement();
       ldm.readDistance();
-      dataStream.sendData();
+      interface.onLdmDistanceReady();
     }
   }
-  // delay(100);
 }
 
 // loop FOC and read sensor takes 8us on average (one motor)

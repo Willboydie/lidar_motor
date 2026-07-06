@@ -51,11 +51,6 @@ public:
     float getVa() { return Va; }  // phase voltage as sent to PWM [V]
     float getVb() { return Vb; }
     float getVc() { return Vc; }
-    float getMechanicalOffset() { return motor_electrical_offset; }
-    float getElectricalOffset() { return motor_electrical_offset; }
-    void setElectricalOffset(float offset) {
-        motor_electrical_offset = normalise_angle(offset);
-    }
 
     void setControlMode(ControlMode _controlMode);
     void setTargetAngle(float _target_world_angle);
@@ -70,6 +65,17 @@ public:
     void setAngleRamp(float _angle_ramp) { PID_angle_controller.setRamp(_angle_ramp); }
     void setFOCVoltageLPFTau(float _foc_voltage_lpf_tau) { LPF_voltage.setTau(_foc_voltage_lpf_tau); }
     void setVelocityFeedForward(float gain) { K_vff = gain; }
+
+    float getVelocityP() const { return PID_velocity_controller.P; }
+    float getVelocityI() const { return PID_velocity_controller.I; }
+    float getVelocityD() const { return PID_velocity_controller.D; }
+    float getVelocityRamp() const { return PID_velocity_controller.output_ramp; }
+    float getAngleP() const { return PID_angle_controller.P; }
+    float getAngleI() const { return PID_angle_controller.I; }
+    float getAngleD() const { return PID_angle_controller.D; }
+    float getAngleRamp() const { return PID_angle_controller.output_ramp; }
+    float getFOCVoltageLPFTau() const { return LPF_voltage.getTau(); }
+    float getVelocityFeedForward() const { return K_vff; }
 
     // Inner current-loop PI gains (STM32G4 measured-current control; no-op path on
     // targets without current sensing). Exposed for live tuning in the L12 bench test.

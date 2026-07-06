@@ -1,0 +1,34 @@
+Build me a real time plotter motor control tuning interface using Qt.
+
+The dashboard function overview:
+- Plots the target and mechanical angles of motor X and motor Y against time,
+- Receives both the control packet and status packet as outlined in @docs/serial_protocol.md
+- Allows the user to command lissajous motor pathways
+
+On the dashboard are displayed:
+- Mechanical angles vs targets (real time plotted)
+- Enabled / disabled status
+- The current tuning values
+
+The dashboard allows:
+- The setting of tuning values (via input fields and buttons, the displayed values should be the latest from the status packet)
+- Serial connection handling
+- Enable/disable button (a stateful button: clicking sends the command but the colour of the button is set 
+according to the enabled/disabled flag in the incoming status packet)
+- The setting of Lissajous Scan Path parameters
+
+
+Lissajous Scan Paths
+The scan path is decided by the following parameters (host-side only — not in status packets):
+- Theta (X/horizontal) Phase increment
+- Theta amplitude
+- Theta centre offset
+- Phi (Y/vertical) Phase increment
+- Phi amplitude
+- Phi centre offset
+- Scan path update period
+See the ScanPath class for how these parameters can be interpreted on the host.
+The Python host computes path points and streams them as TARGET_1_SET / TARGET_2_SET commands.
+Plotted target angles show the commanded path (echoed in the control packet).
+Firmware ScanPath is not used in this configuration.
+The user can alter path parameters any time during live operation.

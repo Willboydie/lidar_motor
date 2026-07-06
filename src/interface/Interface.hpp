@@ -47,64 +47,45 @@
 #define ELECTRICAL_OFFSET_1_SET_CMD 0b00011000
 #define ELECTRICAL_OFFSET_2_SET_CMD 0b00011001
 
-// Outgoing binary status packet header (0xAA, distinct from DataStream's 0x55)
-#define FOC_STATUS_HEADER 0b10101010
+// Outgoing binary packet headers (distinct from each other and from command bytes)
+#define CONTROL_PACKET_HEADER 0b01010101  // 0x55 — hot-path closed-loop telemetry
+#define STATUS_PACKET_HEADER  0b10101010  // 0xAA — housekeeping / tuning telemetry
 
-// One combined packet carries both motors at once. All MotorStatus fields are
-// floats normalised to [-1, 1]: currents by MOTOR_CURRENT_LIMIT, phase voltages
-// by VOLTAGE_POWER_SUPPLY, raw/cmd/elec angles by _2PI (so 0..2pi maps to 0..1),
-// angular error by _PI (so [-pi, pi] maps to [-1, 1]).
 #pragma pack(push, 1)
-struct MotorStatus {
-    float ia, ib, ic;   // inline phase currents (ABC)
-    float id, iq;        // transformed currents (DQ)
-    float raw_angle;         // raw sensor angle (mechanical)
-    float elec_angle;        // measured electrical angle
-    float cmd_elec_angle;    // electrical angle implied by target mechanical angle
-    float angular_error;     // target - mechanical, shortest path [-pi, pi]
-    float va, vb, vc;    // phase voltages as sent to the PWM
+struct ControlPacket {
+    uint8_t header;
+    float target_angle_x;
+    float target_angle_y;
+    float target_velocity_x;
+    float target_velocity_y;
+    float mechanical_angle_x;
+    float mechanical_angle_y;
+    float mechanical_velocity_x;
+    float mechanical_velocity_y;
+    uint16_t distance;
+    float associated_angle_x;
+    float associated_angle_y;
 };
-struct DualMotorStatusPacket {
-    uint8_t header;      // FOC_STATUS_HEADER
-    MotorStatus m1;      // motor 1 (X)
-    MotorStatus m2;      // motor 2 (Y)
+
+struct StatusPacket {
+    uint8_t header;
+    uint8_t enabled;
+    uint8_t control_mode;
+    uint8_t scanning;
+    float velocity_p;
+    float velocity_i;
+    float velocity_d;
+    float velocity_ramp;
+    float angle_p;
+    float angle_i;
+    float angle_d;
+    float angle_ramp;
+    float velocity_lpf_tau;
+    float angle_lpf_tau;
+    float foc_voltage_lpf_tau;
+    float velocity_feed_forward;
 };
 #pragma pack(pop)
-
-// Normalise raw physical quantities into a [-1, 1] MotorStatus.
-inline MotorStatus makeNormalisedMotorStatus(
-    float ia, float ib, float ic,
-    float id, float iq,
-    float raw_angle, float elec_angle, float cmd_elec_angle, float angular_error,
-    float va, float vb, float vc
-) {
-    auto norm = [](float v, float ref) {
-        float x = (ref != 0.0f) ? v / ref : 0.0f;
-        if (x > 1.0f) return 1.0f;
-        if (x < -1.0f) return -1.0f;
-        return x;
-    };
-    MotorStatus s;
-    s.ia = norm(ia, MOTOR_CURRENT_LIMIT);
-    s.ib = norm(ib, MOTOR_CURRENT_LIMIT);
-    s.ic = norm(ic, MOTOR_CURRENT_LIMIT);
-    s.id = norm(id, MOTOR_CURRENT_LIMIT);
-    s.iq = norm(iq, MOTOR_CURRENT_LIMIT);
-    s.raw_angle = norm(raw_angle, _2PI);
-    s.elec_angle = norm(elec_angle, _2PI);
-    s.cmd_elec_angle = norm(cmd_elec_angle, _2PI);
-    s.angular_error = norm(angular_error, _PI);
-    s.va = norm(va, VOLTAGE_POWER_SUPPLY);
-    s.vb = norm(vb, VOLTAGE_POWER_SUPPLY);
-    s.vc = norm(vc, VOLTAGE_POWER_SUPPLY);
-    return s;
-}
-
-// Build and write one dual-motor packet over Serial (shared by Interface + tests).
-inline void sendDualMotorStatusPacket(const MotorStatus& m1, const MotorStatus& m2) {
-    DualMotorStatusPacket packet{ FOC_STATUS_HEADER, m1, m2 };
-    Serial.write((uint8_t*)&packet, sizeof(packet));
-}
 
 
 class Interface {
@@ -122,19 +103,22 @@ public:
     );
     void processCommand(uint8_t cmd, float data);
     void commandListener();
-    void printStatus();
-    void printFOCStatus(FOCController& focController, Sensor& sensor);
-    void sendDualMotorStatus();
+    void sendControlPacket();
+    void sendStatusPacket();
+    void onLdmDistanceReady();
     
 private:
+    float calculateAssociatedAngle(FOCController& focController);
+
+    uint16_t latest_distance = 0;
+    float associated_angle_x = 0.0f;
+    float associated_angle_y = 0.0f;
+
     void handleDisableEnable();
     void handlePlayPause();
     void handleToggleControlMode();
-
     void handleTarget1Set(float data);
     void handleTarget2Set(float data);
-    void handleElectricalOffset1Set(float data);
-    void handleElectricalOffset2Set(float data);
     void handleVelocityPSet(float data);
     void handleVelocityISet(float data);
     void handleVelocityDSet(float data);
@@ -143,22 +127,17 @@ private:
     void handleAngleISet(float data);
     void handleAngleDSet(float data);
     void handleAngleRampSet(float data);
-
     void handleVelocityLPFTauSet(float data);
     void handleAngleLPFTauSet(float data);
     void handleFOCVoltageLPFTauSet(float data);
-
     void handleVelocityFeedForwardSet(float data);
-
     void handleReconfigureLDM(float data);
-    
     void handleThetaPhaseIncSet(float data);
     void handlePhiPhaseIncSet(float data);
     void handleThetaAmplitudeSet(float data);
     void handlePhiAmplitudeSet(float data);
     void handleThetaCentreSet(float data);
     void handlePhiCentreSet(float data);
-
 
     StateMachine& stateMachine;
     FOCController& focController1;

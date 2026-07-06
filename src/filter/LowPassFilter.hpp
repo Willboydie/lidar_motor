@@ -13,6 +13,7 @@ public:
     void reset();
 
     void setTau(float _tau) { tau = _tau; }
+    float getTau() const { return tau; }
 
 protected:
     float y_prev = 0.0f; //!< filtered value in previous execution step 
