@@ -97,11 +97,6 @@ public:
     void setVd(float _Vd) { Vd = _Vd; }
     void setElectricalAngle(float _electrical_angle) { electrical_angle = _electrical_angle; }
 
-    // Angle Tracking
-    void resetAngleTracking() { angle_tracking_count = 0; }
-    float angle_tracking[ANGLE_TRACKING_LIMIT];
-    int angle_tracking_count = 0;
-
     float estimate_Vq(float Iq);
 
     // void setPhaseVoltage(float _Vq, float _Vd, float _angle_el) { Vq = _Vq; Vd = _Vd; electrical_angle = _angle_el; setPhaseVoltage(); }

@@ -68,10 +68,6 @@ bool FOCController::loop() {
     electrical_angle = calculate_electrical_angle();
     angular_velocity = sensor.getFilteredAngularVelocity();
 
-    if (angle_tracking_count < ANGLE_TRACKING_LIMIT) {
-        angle_tracking[angle_tracking_count++] = mechanical_angle;
-    }
-
     // --- Angle loop (outermost): angular error -> target velocity ---
     if (controlMode == ANGLE && (uint32_t)(now_us - last_angle_us) >= ANGLE_LOOP_DT_US) {
         last_angle_us = now_us;
