@@ -1,11 +1,7 @@
 Implement S-curve torque shape towards set points.
-Create a System class which is the only class Interface needs.
-Make listener a non-blocking stateful switch machine.
+Make listener a non-blocking stateful switch machine and add a length double byte to the packets.
 System health flag
 Error mechanism where errors are passed to the host in the status packet only where there are any!
-
-
-
 
 
 
@@ -27,11 +23,6 @@ IMPROVING FOC PERFORMANCE -- TO TRY
 
 LiDAR CONFIG TESTING
     1. Take identical scans in the car park using each of the GARMIN's preset configs.
-
-
-I M P R O V E M E N T S
-- LUT interpolation
-- Reduce lag improve reactance (reduce noise) (see above)
 
 
 G O A L S

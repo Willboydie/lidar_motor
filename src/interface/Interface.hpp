@@ -8,6 +8,7 @@
 #include "sensor/Sensor.hpp"
 #include "scan_path/ScanPath.hpp"
 #include "current_sense/InlineCurrentSense.hpp"
+#include "angle_tracker/AngleTracker.hpp"
 #include "utils/constants.h"
 #include "utils/quick_defs.h"
 #include "utils/tweakable_params.h"
@@ -41,11 +42,11 @@
 #define THETA_CENTRE_SET_CMD 0b00100101
 #define PHI_CENTRE_SET_CMD 0b00100110
 
-#define TARGET_1_SET_CMD 0b00010000
-#define TARGET_2_SET_CMD 0b00010100
+#define TARGET_X_SET_CMD 0b00010000
+#define TARGET_Y_SET_CMD 0b00010100
 
-#define ELECTRICAL_OFFSET_1_SET_CMD 0b00011000
-#define ELECTRICAL_OFFSET_2_SET_CMD 0b00011001
+#define ELECTRICAL_OFFSET_X_SET_CMD 0b00011000
+#define ELECTRICAL_OFFSET_Y_SET_CMD 0b00011001
 
 // Outgoing binary packet headers (distinct from each other and from command bytes)
 #define CONTROL_PACKET_HEADER 0b01010101  // 0x55 — hot-path closed-loop telemetry
@@ -56,12 +57,6 @@ struct ControlPacket {
     uint8_t header;
     float target_angle_x;
     float target_angle_y;
-    float target_velocity_x;
-    float target_velocity_y;
-    float mechanical_angle_x;
-    float mechanical_angle_y;
-    float mechanical_velocity_x;
-    float mechanical_velocity_y;
     uint16_t distance;
     float associated_angle_x;
     float associated_angle_y;
@@ -92,33 +87,28 @@ class Interface {
 public:
     Interface(
         StateMachine& _stateMachine, 
-        FOCController& _focController1, 
-        FOCController& _focController2, 
-        Sensor& _sensor1, 
-        Sensor& _sensor2, 
-        InlineCurrentSense& _currentSense1, 
-        InlineCurrentSense& _currentSense2, 
-        LDM& _ldm, 
+        FOCController& _focControllerX, 
+        FOCController& _focControllerY, 
+        Sensor& _sensorX, 
+        Sensor& _sensorY, 
+        InlineCurrentSense& _currentSenseX, 
+        InlineCurrentSense& _currentSenseY, 
+        LDM& _ldm,
+        AngleTracker& _angleTrackerX,
+        AngleTracker& _angleTrackerY,
         ScanPath& _scanPath
     );
     void processCommand(uint8_t cmd, float data);
     void commandListener();
     void sendControlPacket();
     void sendStatusPacket();
-    void onLdmDistanceReady();
     
 private:
-    float calculateAssociatedAngle(FOCController& focController);
-
-    uint16_t latest_distance = 0;
-    float associated_angle_x = 0.0f;
-    float associated_angle_y = 0.0f;
-
     void handleDisableEnable();
     void handlePlayPause();
     void handleToggleControlMode();
-    void handleTarget1Set(float data);
-    void handleTarget2Set(float data);
+    void handleTargetXSet(float data);
+    void handleTargetYSet(float data);
     void handleVelocityPSet(float data);
     void handleVelocityISet(float data);
     void handleVelocityDSet(float data);
@@ -140,13 +130,15 @@ private:
     void handlePhiCentreSet(float data);
 
     StateMachine& stateMachine;
-    FOCController& focController1;
-    FOCController& focController2;
-    Sensor& sensor1;
-    Sensor& sensor2;
-    InlineCurrentSense& currentSense1;
-    InlineCurrentSense& currentSense2;
+    FOCController& focControllerX;
+    FOCController& focControllerY;
+    Sensor& sensorX;
+    Sensor& sensorY;
+    InlineCurrentSense& currentSenseX;
+    InlineCurrentSense& currentSenseY;
     LDM& ldm;
+    AngleTracker& angleTrackerX;
+    AngleTracker& angleTrackerY;
     ScanPath& scanPath;
     uint8_t cmd;
     float data; // temporary storage for command data
