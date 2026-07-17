@@ -1,10 +1,12 @@
-Reintroduce debug messages
-Debug enable fail
-
 Implement S-curve torque shape towards set points.
+Experiment with a python host closed loop scanner
+    1. Open loop coarse lissajous
+    2. Closed loop adaptive stepping
+    3. Can we find an XY point, given an easy scene (office floor/wall)?
 
 
-IMPROVING FOC PERFORMANCE -- TO TRY
+IMPROVING PERFORMANCE
+    - Implement S-curve torque shape towards set points
     -Try different velocity estimation rates.
     -Try different FOC loop rates.
     -Test bit removal.
@@ -25,5 +27,4 @@ LiDAR CONFIG TESTING
 
 
 G O A L S
-- Self optimising PID?
 - Garmin: exporting correlation records + angle lists (+ timestamps?)

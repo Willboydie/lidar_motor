@@ -64,8 +64,10 @@ struct ControlPacket {
     float target_angle_x;
     float target_angle_y;
     uint16_t distance;
-    float mechanical_angle_x;  // live rotor angle [rad] — motor-control UI / plotter
+    float mechanical_angle_x;   // live rotor angle [rad] — motor-control UI / plotter
     float mechanical_angle_y;
+    float associated_angle_x;   // LDM sample-time angle [rad] (AngleTracker)
+    float associated_angle_y;
 };
 
 struct StatusPacket {

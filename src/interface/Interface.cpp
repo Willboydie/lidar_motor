@@ -303,7 +303,9 @@ void Interface::sendControlPacket() {
         focControllerY.getTargetAngle(),
         ldm.getLatestDistance(),
         sensorX.getLatestRotorAngle(),
-        sensorY.getLatestRotorAngle()
+        sensorY.getLatestRotorAngle(),
+        angleTrackerX.getAssociatedAngle(),
+        angleTrackerY.getAssociatedAngle()
     };
     Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }   

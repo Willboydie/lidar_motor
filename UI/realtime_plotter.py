@@ -1,11 +1,12 @@
 """
 Motor control realtime plotter — Qt dashboard for V1 serial telemetry.
 
-Parses ControlPacket (0x55 @ 500 Hz), StatusPacket (0xAA @ 10 Hz), and framed
+Parses ControlPacket (0x55 @ 500 Hz, 27 B), StatusPacket (0xAA @ 10 Hz), and framed
 Debug messages (0xFF 0x04 0x06 + newline-terminated text) per
 docs/serial_protocol.md / src/debug/Debug.hpp. Plots motor X/Y target vs
-mechanical angles over time. The host computes sine-wave setpoints and streams
-them via TARGET_X_SET / TARGET_Y_SET (0x10 / 0x14). Firmware ScanPath is not used.
+mechanical angles over time (associated angles are parsed then ignored).
+The host computes sine-wave setpoints and streams them via TARGET_X_SET /
+TARGET_Y_SET (0x10 / 0x14). Firmware ScanPath is not used.
 
 Flash the Teensy plotter stub first:
     pio run -e teensy41 --target upload
@@ -39,7 +40,7 @@ STATUS_HEADER = 0xAA
 # Debug::msg — Serial.write(DEBUG_HEADER) then Serial.println(text)
 DEBUG_HEADER = bytes((0xFF, 0x04, 0x06))
 DEBUG_HEADER_SIZE = len(DEBUG_HEADER)
-CONTROL_STRUCT = struct.Struct("<BffHff")  # 19 B — matches Interface.hpp ControlPacket
+CONTROL_STRUCT = struct.Struct("<BffHffff")  # 27 B — matches Interface.hpp ControlPacket
 STATUS_STRUCT = struct.Struct("<BBBBffffffffffff")
 CONTROL_SIZE = CONTROL_STRUCT.size
 STATUS_SIZE = STATUS_STRUCT.size
@@ -82,12 +83,16 @@ ANGLE_CURVES = (
     ("Y mechanical", 3, "#ff9944", QtCore.Qt.PenStyle.DashLine),
 )
 
-# Indices into ControlPacket fields after header unpack:
-# (header, target_x, target_y, distance, mechanical_x, mechanical_y)
+# ControlPacket unpack indices (header + fields):
+# 0 header, 1 target_x, 2 target_y, 3 distance,
+# 4 mechanical_x, 5 mechanical_y, 6 associated_x, 7 associated_y
+# Plotter uses targets + mechanical only; associated is parsed then ignored.
 _CONTROL_TARGET_X = 1
 _CONTROL_TARGET_Y = 2
 _CONTROL_MECH_X = 4
 _CONTROL_MECH_Y = 5
+_CONTROL_ASSOC_X = 6
+_CONTROL_ASSOC_Y = 7
 
 TUNING_FIELDS = (
     ("velocity_p", VELOCITY_P_SET_CMD),

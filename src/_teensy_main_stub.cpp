@@ -129,6 +129,8 @@ void loop() {
     } else {
         focControllerX.loop();
         focControllerY.loop();
+        angleTrackerX.update();
+        angleTrackerY.update();
     }
 
     if ((uint32_t)(micros() - control_us) >= CONTROL_PACKET_PERIOD_US) {

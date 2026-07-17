@@ -54,7 +54,7 @@ Unknown `cmd` values raise `FAULT_CMD_INVALID`.
 
 | Packet | Header | Size | Nominal rate | Constant |
 |--------|--------|------|--------------|----------|
-| Control | `0x55` | **19 bytes** | 500 Hz | `CONTROL_PACKET_PERIOD_US` = 2000 µs |
+| Control | `0x55` | **27 bytes** | 500 Hz | `CONTROL_PACKET_PERIOD_US` = 2000 µs |
 | Status | `0xAA` | **52 bytes** | 10 Hz | `STATUS_PACKET_PERIOD_MS` = 100 ms |
 
 No checksums in this revision. Distinguish packet types by header byte and fixed size.
@@ -76,7 +76,9 @@ No checksums in this revision. Distinguish packet types by header byte and fixed
 | `distance` | centimetres (`uint16`) |
 | Velocity feed-forward | A·s/rad |
 
-**Mechanical angles** (`mechanical_angle_x/y` in the control packet) are the live AS5048 rotor angles. The motor-control UI plots these against commanded targets.
+**Mechanical angles** (`mechanical_angle_x/y`) are the live AS5048 rotor angles.
+**Associated angles** (`associated_angle_x/y`) are the AngleTracker estimate at the
+last LDM sample time. The motor-control UI plots targets vs mechanical only.
 
 While scanning under ANGLE mode, the onboard `ScanPath` may drive targets. Otherwise the host streams setpoints with `TARGET_X_SET` / `TARGET_Y_SET`.
 
@@ -133,7 +135,7 @@ DISABLE_ENABLE_CMD           ← disable before LDM reconfig / shutdown
 
 ---
 
-## 6. Control packet (`0x55`, 19 bytes)
+## 6. Control packet (`0x55`, 27 bytes)
 
 High-rate closed-loop stream for the motor-control UI (`UI/realtime_plotter.py`).
 
@@ -145,6 +147,8 @@ High-rate closed-loop stream for the motor-control UI (`UI/realtime_plotter.py`)
 | 9 | `uint16` | `distance` | LDM range [cm] (0 on FOC bench stub) |
 | 11 | `float32` | `mechanical_angle_x` | live X rotor angle [rad] |
 | 15 | `float32` | `mechanical_angle_y` | live Y rotor angle [rad] |
+| 19 | `float32` | `associated_angle_x` | X angle at last LDM sample [rad] |
+| 23 | `float32` | `associated_angle_y` | Y angle at last LDM sample [rad] |
 
 ```c
 #pragma pack(push, 1)
@@ -155,18 +159,20 @@ struct ControlPacket {
     uint16_t distance;
     float mechanical_angle_x;
     float mechanical_angle_y;
+    float associated_angle_x;
+    float associated_angle_y;
 };
 #pragma pack(pop)
 ```
 
 ```python
 CONTROL_HEADER = 0x55
-CONTROL_STRUCT = struct.Struct("<BffHff")  # 19 bytes
+CONTROL_STRUCT = struct.Struct("<BffHffff")  # 27 bytes
 ```
 
-**Plotter:** overlays `target_*` vs `mechanical_*` for both axes. Host streams setpoints with `TARGET_X_SET` / `TARGET_Y_SET` (onboard `ScanPath` is optional / unused by the plotter).
+**Plotter:** overlays `target_*` vs `mechanical_*` for both axes; associated fields are consumed for framing only. Host streams setpoints with `TARGET_X_SET` / `TARGET_Y_SET` (onboard `ScanPath` is optional / unused by the plotter).
 
-**Point cloud:** hosts that need LDM sample-time association should latch angles via `AngleTracker` on the device or correlate `distance` with `mechanical_angle_*` on RX. Between LDM samples, `distance` retains its last value.
+**Point cloud:** use `(distance_cm, associated_angle_x, associated_angle_y)`. Between LDM samples, `distance` and associated angles retain their last values.
 
 ---
 
@@ -351,7 +357,7 @@ send_cmd(ser, 0x1C)          # pull fault text
 import struct
 import serial
 
-CONTROL = struct.Struct("<BffHff")            # 19 B, header 0x55
+CONTROL = struct.Struct("<BffHffff")           # 27 B, header 0x55
 STATUS  = struct.Struct("<BBBBffffffffffff") # 52 B, header 0xAA
 
 def parse_stream(ser: serial.Serial):
@@ -391,7 +397,7 @@ def parse_stream(ser: serial.Serial):
 |----------|----------------|-------|
 | Legacy `DataStream` | 19 B, different fields | `cmd, distance, angle1, angle2, target1, target2` |
 | Prior V1 doc | **43 B** `0x55` | included velocities + mechanical angles |
-| **Current** | **19 B** `0x55` | `target_x/y`, `distance`, `mechanical_x/y` |
+| **Current** | **27 B** `0x55` | `target_x/y`, `distance`, `mechanical_x/y`, `associated_x/y` |
 
 Status packet remains **52 bytes** / `0xAA`.
 
@@ -407,7 +413,7 @@ New since the prior doc: sleep / wake / restart / bootloader, `GET_ERROR_MSG`, L
 
 ```
 COMMAND:  [uint8 cmd][float32 data]                         5 B   host → device
-CONTROL:  0x55 | target_x | target_y | dist u16 | assoc_x/y  19 B  ~500 Hz
+CONTROL:  0x55 | target_x/y | dist u16 | mech_x/y | assoc_x/y  27 B  ~500 Hz
 STATUS:   0xAA | en | mode | scan | 12×float tuning         52 B  ~10 Hz
 FAULTS:   GET_ERROR_MSG (0x1C) → ASCII lines, then clear
 BAUD:     460800 8N1, little-endian IEEE754 floats
