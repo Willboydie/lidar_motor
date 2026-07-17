@@ -26,6 +26,8 @@ class InlineCurrentSense {
 public:
     virtual ~InlineCurrentSense() = default;
 
+    virtual bool init() = 0;
+
     // Latest measured phase currents [A]. Implemented by the hardware backend.
     virtual PhaseCurrent_s getPhaseCurrents() = 0;
 
@@ -43,4 +45,7 @@ public:
     float offset_ia = 0.0f;
     float offset_ib = 0.0f;
     float offset_ic = 0.0f;
+
+private:
+    bool initialised = false;
 };

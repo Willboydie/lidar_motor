@@ -10,6 +10,8 @@
 #include "../../pwm_driver/PlatformPWMDriver.hpp"
 #include "../../scan_path/ScanPath.hpp"
 #include "../../ldm/LDM.hpp"
+#include "../../angle_tracker/AngleTracker.hpp"
+#include "../../fault_manager/FaultManager.hpp"
 #include "../wiring/wiring_common.hpp"
 
 #if defined(STM32G4xx)
@@ -174,6 +176,11 @@ inline void dual_foc_test() {
     if (!dual_foc_bringup_current_sense(driver_x, cs_x, driver_y, cs_y)) {
         while (true) { delay(1000); }
     }
+#else
+    if (!driver_x.init() || !driver_y.init()) {
+        Serial.println("RESULT dual_foc FAIL driver_init=0");
+        while (true) { delay(1000); }
+    }
 #endif
 
     GM2804 motor_x(1, SENSOR_OFFSET_X);
@@ -187,6 +194,13 @@ inline void dual_foc_test() {
     foc_x.setCurrentSense(cs_x);
     foc_y.setCurrentSense(cs_y);
 #endif
+
+    if (!sensor_x.init() || !sensor_y.init()) {
+        Serial.println("RESULT dual_foc FAIL encoder_init=0");
+        while (true) { delay(1000); }
+    }
+    sensor_x.enable();
+    sensor_y.enable();
 
     if (!foc_x.init() || !foc_y.init()) {
         Serial.println("RESULT dual_foc FAIL foc_init=0");
@@ -205,17 +219,34 @@ inline void dual_foc_test() {
     StateMachine state_machine;
     BenchStubLDM ldm;
     ldm.init();
+    AngleTracker angle_tracker_x(sensor_x, faultManager, FAULT_TRACKER_X_OVERFLOW);
+    AngleTracker angle_tracker_y(sensor_y, faultManager, FAULT_TRACKER_Y_OVERFLOW);
     SinusoidalScanPath scan_path(
         L15_THETA_INC, L15_PHI_INC,
         THETA_AMPLITUDE, PHI_AMPLITUDE,
         THETA_CENTRE, PHI_CENTRE);
 #if defined(STM32G4xx)
-    Interface interface(state_machine, foc_x, foc_y, sensor_x, sensor_y, cs_x, cs_y, ldm, scan_path);
+    SystemManager system_manager(foc_x, foc_y, sensor_x, sensor_y, cs_x, cs_y, ldm,
+                                 driver_x, driver_y, faultManager, state_machine);
+    Interface interface(state_machine, foc_x, foc_y, sensor_x, sensor_y, cs_x, cs_y, ldm,
+                        angle_tracker_x, angle_tracker_y, scan_path, faultManager, system_manager);
 #else
     InlineCurrentSenseTeensy41 cs_stub_x;
     InlineCurrentSenseTeensy41 cs_stub_y;
-    Interface interface(state_machine, foc_x, foc_y, sensor_x, sensor_y, cs_stub_x, cs_stub_y, ldm, scan_path);
+    SystemManager system_manager(foc_x, foc_y, sensor_x, sensor_y, cs_stub_x, cs_stub_y, ldm,
+                                 driver_x, driver_y, faultManager, state_machine);
+    Interface interface(state_machine, foc_x, foc_y, sensor_x, sensor_y, cs_stub_x, cs_stub_y, ldm,
+                        angle_tracker_x, angle_tracker_y, scan_path, faultManager, system_manager);
 #endif
+
+    // Mark SystemManager ready so Interface enable/disable paths work. Sensors /
+    // PWM / FOC are already initialised above; SystemManager::init is idempotent
+    // for those and also initialises the bench LDM stub.
+    system_manager.init();
+    if (!system_manager.isInitialised()) {
+        Serial.println("RESULT dual_foc FAIL system_manager_init=0");
+        while (true) { delay(1000); }
+    }
 
     dual_foc_bench_prompt();
 

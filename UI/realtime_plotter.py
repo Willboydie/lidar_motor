@@ -1,10 +1,15 @@
 """
 Motor control realtime plotter — Qt dashboard for V1 serial telemetry.
 
-Parses ControlPacket (0x55, 43 B @ 500 Hz) and StatusPacket (0xAA, 52 B @ 10 Hz)
-per docs/serial_protocol.md. Plots motor X/Y target vs mechanical angles over time.
-The host computes sine-wave setpoints and streams them via TARGET_1_SET / TARGET_2_SET
-commands. Firmware ScanPath is not used.
+Parses ControlPacket (0x55 @ 500 Hz), StatusPacket (0xAA @ 10 Hz), and framed
+Debug messages (0xFF 0x04 0x06 + newline-terminated text) per
+docs/serial_protocol.md / src/debug/Debug.hpp. Plots motor X/Y target vs
+mechanical angles over time. The host computes sine-wave setpoints and streams
+them via TARGET_X_SET / TARGET_Y_SET (0x10 / 0x14). Firmware ScanPath is not used.
+
+Flash the Teensy plotter stub first:
+    pio run -e teensy41 --target upload
+    # entry: src/_teensy_main_stub.cpp
 
 Usage:
     pip install PySide6 pyqtgraph pyserial
@@ -28,10 +33,13 @@ import serial
 import serial.tools.list_ports
 from PySide6 import QtCore, QtGui, QtWidgets
 
-# ---------- Protocol (mirrors src/interface/Interface.hpp) ----------
+# ---------- Protocol (mirrors Interface.hpp / Debug.hpp) ----------
 CONTROL_HEADER = 0x55
 STATUS_HEADER = 0xAA
-CONTROL_STRUCT = struct.Struct("<BffffffffHff")
+# Debug::msg — Serial.write(DEBUG_HEADER) then Serial.println(text)
+DEBUG_HEADER = bytes((0xFF, 0x04, 0x06))
+DEBUG_HEADER_SIZE = len(DEBUG_HEADER)
+CONTROL_STRUCT = struct.Struct("<BffHff")  # 19 B — matches Interface.hpp ControlPacket
 STATUS_STRUCT = struct.Struct("<BBBBffffffffffff")
 CONTROL_SIZE = CONTROL_STRUCT.size
 STATUS_SIZE = STATUS_STRUCT.size
@@ -46,8 +54,8 @@ ANGLE_P_SET_CMD = 0x0C
 ANGLE_I_SET_CMD = 0x0D
 ANGLE_D_SET_CMD = 0x0E
 ANGLE_RAMP_SET_CMD = 0x0F
-TARGET_1_SET_CMD = 0x10
-TARGET_2_SET_CMD = 0x14
+TARGET_X_SET_CMD = 0x10  # Interface.hpp TARGET_X_SET_CMD
+TARGET_Y_SET_CMD = 0x14  # Interface.hpp TARGET_Y_SET_CMD
 FOC_VOLTAGE_LPF_TAU_SET_CMD = 0x11
 VELOCITY_LPF_TAU_SET_CMD = 0x12
 ANGLE_LPF_TAU_SET_CMD = 0x13
@@ -56,7 +64,7 @@ VELOCITY_FF_SET_CMD = 0x92
 DEFAULT_BAUD = 460800
 HISTORY_SAMPLES = 15000  # ~30 s at 500 Hz
 TWO_PI = 2.0 * math.pi
-PATH_UPDATE_PERIOD_S = 0.1
+PATH_UPDATE_PERIOD_S = 0.1  # host sine step period (matches UI label)
 PLOT_INTERVAL_MS = 33  # ~30 Hz
 
 CONTROL_MODE_LABELS = {0: "PATH", 1: "ANGLE", 2: "VELOCITY"}
@@ -74,11 +82,12 @@ ANGLE_CURVES = (
     ("Y mechanical", 3, "#ff9944", QtCore.Qt.PenStyle.DashLine),
 )
 
-# Indices into the stored angle sample tuple (target_x, target_y, mech_x, mech_y).
+# Indices into ControlPacket fields after header unpack:
+# (header, target_x, target_y, distance, mechanical_x, mechanical_y)
 _CONTROL_TARGET_X = 1
 _CONTROL_TARGET_Y = 2
-_CONTROL_MECH_X = 5
-_CONTROL_MECH_Y = 6
+_CONTROL_MECH_X = 4
+_CONTROL_MECH_Y = 5
 
 TUNING_FIELDS = (
     ("velocity_p", VELOCITY_P_SET_CMD),
@@ -232,13 +241,16 @@ class AngleHistory:
 
 
 class SerialReader(threading.Thread):
-    def __init__(self, port: str, baud: int, on_control, on_status, on_text, on_error):
+    def __init__(
+        self, port: str, baud: int, on_control, on_status, on_text, on_debug, on_error
+    ):
         super().__init__(daemon=True)
         self.port_name = port
         self.baud = baud
         self.on_control = on_control
         self.on_status = on_status
         self.on_text = on_text
+        self.on_debug = on_debug
         self.on_error = on_error
         self._stop_event = threading.Event()
         self._serial: serial.Serial | None = None
@@ -282,6 +294,19 @@ class SerialReader(threading.Thread):
             except serial.SerialException:
                 pass
 
+    @staticmethod
+    def _find_next_frame(buf: bytearray, start: int = 1) -> int:
+        """Index of the next control/status/debug frame, or -1 if none."""
+        next_hdr = -1
+        for h in (CONTROL_HEADER, STATUS_HEADER):
+            idx = buf.find(bytes([h]), start)
+            if idx >= 0 and (next_hdr < 0 or idx < next_hdr):
+                next_hdr = idx
+        idx = buf.find(DEBUG_HEADER, start)
+        if idx >= 0 and (next_hdr < 0 or idx < next_hdr):
+            next_hdr = idx
+        return next_hdr
+
     def _parse_buffer(self) -> None:
         buf = self._rx_buffer
         while buf:
@@ -300,13 +325,26 @@ class SerialReader(threading.Thread):
                 del buf[:STATUS_SIZE]
                 self.on_status(packet)
                 continue
+            if header == DEBUG_HEADER[0]:
+                if len(buf) < DEBUG_HEADER_SIZE:
+                    break
+                if buf[:DEBUG_HEADER_SIZE] == DEBUG_HEADER:
+                    nl = buf.find(b"\n", DEBUG_HEADER_SIZE)
+                    if nl < 0:
+                        if len(buf) > 512:
+                            del buf[0]
+                            continue
+                        break
+                    line = bytes(buf[DEBUG_HEADER_SIZE : nl + 1])
+                    del buf[: nl + 1]
+                    text = line.decode("utf-8", errors="replace").strip()
+                    if text:
+                        self.on_debug(text)
+                    continue
+                # Lone 0xFF that is not a debug frame — treat as text/resync below.
 
             nl = buf.find(b"\n")
-            next_hdr = -1
-            for h in (CONTROL_HEADER, STATUS_HEADER):
-                idx = buf.find(bytes([h]), 1)
-                if idx >= 0 and (next_hdr < 0 or idx < next_hdr):
-                    next_hdr = idx
+            next_hdr = self._find_next_frame(buf, 1)
             if nl >= 0 and (next_hdr < 0 or nl < next_hdr):
                 line = bytes(buf[: nl + 1])
                 del buf[: nl + 1]
@@ -343,6 +381,7 @@ class SerialReader(threading.Thread):
 
 class RealtimePlotter(QtWidgets.QMainWindow):
     text_received = QtCore.Signal(str)
+    debug_received = QtCore.Signal(str)
     error_received = QtCore.Signal(str)
     status_received = QtCore.Signal(object)
 
@@ -363,6 +402,7 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self._rate_last_count = 0
 
         self.text_received.connect(self._append_log)
+        self.debug_received.connect(self._append_debug)
         self.error_received.connect(self._on_serial_error)
         self.status_received.connect(self._on_status_ui)
 
@@ -454,9 +494,10 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         path_box = QtWidgets.QGroupBox("Sine wave path (host-generated)")
         path_layout = QtWidgets.QFormLayout(path_box)
         path_note = QtWidgets.QLabel(
-            "y = a·π·(sin(b·x) + 1) + c; x advances each 0.02 s. "
+            "y = a·π·(sin(b·x) + 1) + c; x advances each "
+            f"{PATH_UPDATE_PERIOD_S:.1f} s. "
             "X target = x, Y target = y (both normalised to [0, 2π)). "
-            "Setpoints are sent as TARGET_1/2 commands."
+            "Setpoints are sent as TARGET_X/Y (0x10/0x14)."
         )
         path_note.setWordWrap(True)
         path_note.setStyleSheet("color: #888;")
@@ -552,7 +593,8 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.log_box = QtWidgets.QPlainTextEdit()
         self.log_box.setReadOnly(True)
         self.log_box.setMaximumBlockCount(500)
-        self.log_box.setFixedHeight(140)
+        self.log_box.setFixedHeight(160)
+        self.log_box.setPlaceholderText("Serial text / Debug::msg output…")
         self.log_box.setStyleSheet(
             "background-color: #101014; color: #cccccc; font-family: Consolas, monospace;"
         )
@@ -628,15 +670,15 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self._stop_scanning()
         theta = normalize_angle(self.manual_x_spin.value())
         phi = normalize_angle(self.manual_y_spin.value())
-        self._send_cmd(TARGET_1_SET_CMD, theta)
-        self._send_cmd(TARGET_2_SET_CMD, phi)
+        self._send_cmd(TARGET_X_SET_CMD, theta)
+        self._send_cmd(TARGET_Y_SET_CMD, phi)
 
     def _write_targets(self, theta: float, phi: float) -> None:
         reader = self.reader
         if reader is None:
             return
-        reader.write_command(TARGET_1_SET_CMD, theta)
-        reader.write_command(TARGET_2_SET_CMD, phi)
+        reader.write_command(TARGET_X_SET_CMD, theta)
+        reader.write_command(TARGET_Y_SET_CMD, phi)
 
     def _refresh_ports(self) -> None:
         current = self.port_combo.currentText()
@@ -665,6 +707,7 @@ class RealtimePlotter(QtWidgets.QMainWindow):
             on_control=self._on_control_thread,
             on_status=self._on_status_thread,
             on_text=self.text_received.emit,
+            on_debug=self.debug_received.emit,
             on_error=self.error_received.emit,
         )
         self.reader.start()
@@ -703,6 +746,7 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
     def _send_enable_toggle(self) -> None:
         self._send_cmd(DISABLE_ENABLE_CMD)
+        print("ENABLE CMD SENT")
 
     def _style_enable_btn(self) -> None:
         if self._enabled:
@@ -762,7 +806,22 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.rate_label.setText(f"{rate:.0f} control pkt/s")
 
     def _append_log(self, text: str) -> None:
-        self.log_box.appendPlainText(text)
+        cursor = self.log_box.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
+        fmt = QtGui.QTextCharFormat()
+        fmt.setForeground(QtGui.QColor("#cccccc"))
+        cursor.insertText(text + "\n", fmt)
+        self.log_box.setTextCursor(cursor)
+        self.log_box.ensureCursorVisible()
+
+    def _append_debug(self, text: str) -> None:
+        cursor = self.log_box.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
+        fmt = QtGui.QTextCharFormat()
+        fmt.setForeground(QtGui.QColor("#ffcc66"))
+        cursor.insertText(f"[DEBUG] {text}\n", fmt)
+        self.log_box.setTextCursor(cursor)
+        self.log_box.ensureCursorVisible()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self._disconnect()

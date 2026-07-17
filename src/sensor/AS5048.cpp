@@ -7,10 +7,6 @@ AS5048::AS5048(int cs) : Sensor() {
     cs_pin = cs;
 }
 
-bool AS5048::init() {
-    return init(&SPI);
-}
-
 bool AS5048::init(SPIClass* _spi) {
     spi = _spi;
     spi_settings = SPISettings(SPI_CLOCK_SPEED, MSBFIRST, SPI_MODE);
@@ -92,7 +88,7 @@ byte AS5048::spiCalcEvenParity(word v) {  // unused in this implementation
 
 //Closes the SPI connection
 // SPI has an internal SPI-device counter, for each init()-call the deinit() function must be called exactly 1 time
-void AS5048::deinit() {
+void AS5048::hardwareDeinit() {
     digitalWrite(cs_pin, HIGH); // deselect
     pinMode(cs_pin, INPUT);     // release the pin
 

@@ -22,6 +22,12 @@ inline void current_loop_pi_y_test() {
     AS5048 sensor(SENSOR_SPI_CS_Y);
     FOCController foc(sensor, driver, motor);
 
+    if (!sensor.init()) {
+        Serial.println("RESULT current_loop_pi_y FAIL encoder_init=0");
+        while (true) { delay(1000); }
+    }
+    sensor.enable();
+
     if (!foc.init()) {
         Serial.println("RESULT current_loop_pi_y FAIL foc_init=0");
         while (true) { delay(1000); }

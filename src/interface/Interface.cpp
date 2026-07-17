@@ -1,6 +1,6 @@
 #include "Interface.hpp"
 
-Interface::Interface(StateMachine& _stateMachine, FOCController& _focControllerX, FOCController& _focControllerY, Sensor& _sensorX, Sensor& _sensorY, InlineCurrentSense& _currentSenseX, InlineCurrentSense& _currentSenseY, LDM& _ldm, AngleTracker& _angleTrackerX, AngleTracker& _angleTrackerY, ScanPath& _scanPath) 
+Interface::Interface(StateMachine& _stateMachine, FOCController& _focControllerX, FOCController& _focControllerY, Sensor& _sensorX, Sensor& _sensorY, InlineCurrentSense& _currentSenseX, InlineCurrentSense& _currentSenseY, LDM& _ldm, AngleTracker& _angleTrackerX, AngleTracker& _angleTrackerY, ScanPath& _scanPath, FaultManager& _faultManager, SystemManager& _systemManager) 
 : stateMachine(_stateMachine)
 , focControllerX(_focControllerX)
 , focControllerY(_focControllerY)
@@ -12,6 +12,8 @@ Interface::Interface(StateMachine& _stateMachine, FOCController& _focControllerX
 , angleTrackerX(_angleTrackerX)
 , angleTrackerY(_angleTrackerY)
 , scanPath(_scanPath)
+, faultManager(_faultManager)
+, systemManager(_systemManager)
 {}
 
 
@@ -24,6 +26,8 @@ void Interface::commandListener() {
             float value;
             memcpy(&value, buffer, sizeof(float));
             processCommand(cmdByte, value);
+        } else {
+            faultManager.addFault(FAULT_PROTO_OVERFLOW);
         }
     }
 }
@@ -103,40 +107,68 @@ void Interface::processCommand(uint8_t cmd, float data) {
         case PHI_CENTRE_SET_CMD:
             handlePhiCentreSet(data);
             break;
+        case SLEEP_CMD:
+            handleSleep();
+            break;
+        case WAKE_CMD:
+            handleWake();
+            break;
+        case RESTART_CMD:
+            handleRestart();
+            break;
+        case ENTER_BOOTLOADER_CMD:
+            handleEnterBootloader();
+            break;
+        case GET_ERROR_MSG_CMD:
+            handleGetErrorMessage();
+            break;
         default:
-            Serial.println("Invalid command");
+            faultManager.addFault(FAULT_CMD_INVALID);
     }
 }
 
 
 void Interface::handleDisableEnable() {
     if (stateMachine.enabled) {
-        focControllerX.disable();
-        focControllerY.disable();
-        ldm.disable();
-        stateMachine.enabled = false;
-        Serial.println("Scanner disabled");
+        systemManager.disable();
     } else {
-        focControllerX.enable();
-        focControllerY.enable();
-        ldm.enable();
-        stateMachine.enabled = true;
-        Serial.println("Scanner enabled");
+        systemManager.enable();
     }
+}
+
+
+void Interface::handleSleep() {
+    systemManager.sleep();
+}
+
+void Interface::handleWake() {
+    systemManager.wake();
+}
+
+void Interface::handleRestart() {
+    systemManager.restart();
+}
+
+void Interface::handleEnterBootloader() {
+    systemManager.enterBootloader();
+}
+
+void Interface::handleGetErrorMessage() {
+    for (uint8_t i = 1; i < FAULT_CODE_MAX; i++) {
+        FaultCode fault_code = static_cast<FaultCode>(i);
+        if (faultManager.faulty(fault_code) > 0) {
+            faultManager.sendErrorMessage(fault_code);
+        }
+    }
+    faultManager.clearAllFaults();
 }
 
 void Interface::handlePlayPause() {
     if (stateMachine.controlMode != ANGLE) {
-        Serial.println("Control mode must be ANGLE to scan");
+        faultManager.addFault(FAULT_CMD_REJECTED_STATE);
         return;
     }
-    if (stateMachine.scanning) {
-        stateMachine.scanning = false;
-        Serial.println("Scanning paused");
-    } else {
-        stateMachine.scanning = true;
-        Serial.println("Scanning started");
-    }
+    stateMachine.scanning = !stateMachine.scanning;
 }
 
 
@@ -145,14 +177,12 @@ void Interface::handleToggleControlMode() {
         stateMachine.controlMode = VELOCITY;
         focControllerX.setControlMode(VELOCITY);
         focControllerY.setControlMode(VELOCITY);
-        Serial.println("Control mode toggled to: VELOCITY");
         return;
     }
     else if (stateMachine.controlMode == VELOCITY) {
         stateMachine.controlMode = ANGLE;
         focControllerX.setControlMode(ANGLE);
         focControllerY.setControlMode(ANGLE);
-        Serial.println("Control mode toggled to: ANGLE");
         return;
     }
     return;
@@ -165,133 +195,115 @@ void Interface::handleTargetXSet(float data) {
 }
 
 void Interface::handleTargetYSet(float data) {
-    if (stateMachine.controlMode == ANGLE) focControllerX.setTargetAngle(data);
+    if (stateMachine.controlMode == ANGLE) focControllerY.setTargetAngle(data);
     else focControllerY.setTargetVelocity(data);
 }
 
 void Interface::handleVelocityPSet(float data) {
     focControllerX.setVelocityP(data);
     focControllerY.setVelocityP(data);
-    Serial.println("Velocity P set to: " + String(data));
 }
 
 void Interface::handleVelocityISet(float data) {
     focControllerX.setVelocityI(data);
     focControllerY.setVelocityI(data);
-    Serial.println("Velocity I set to: " + String(data));
 }
 
 void Interface::handleVelocityDSet(float data) {
     focControllerX.setVelocityD(data);
     focControllerY.setVelocityD(data);
-    Serial.println("Velocity D set to: " + String(data));
 }
 
 void Interface::handleVelocityRampSet(float data) {
     focControllerX.setVelocityRamp(data);
     focControllerY.setVelocityRamp(data);
-    Serial.println("Velocity ramp set to: " + String(data));
 }
 
 void Interface::handleAnglePSet(float data) {
     focControllerX.setAngleP(data);
     focControllerY.setAngleP(data);
-    Serial.println("Angle P set to: " + String(data));
 }
 
 void Interface::handleAngleISet(float data) {
     focControllerX.setAngleI(data);
     focControllerY.setAngleI(data);
-    Serial.println("Angle I set to: " + String(data));
 }
 
 void Interface::handleAngleDSet(float data) {
     focControllerX.setAngleD(data);
     focControllerY.setAngleD(data);
-    Serial.println("Angle D set to: " + String(data));
 }
 
 void Interface::handleAngleRampSet(float data) {
     focControllerX.setAngleRamp(data);
     focControllerY.setAngleRamp(data);
-    Serial.println("Angle ramp set to: " + String(data));
 }
 
 
 void Interface::handleVelocityLPFTauSet(float data) {
     sensorX.setVelocityLPFTau(data);
     sensorY.setVelocityLPFTau(data);
-    Serial.println("Velocity LPF tau set to: " + String(data, 8));
 }
 
 void Interface::handleAngleLPFTauSet(float data) {
     sensorX.setAngleLPFTau(data);
     sensorY.setAngleLPFTau(data);
-    Serial.println("Angle LPF tau set to: " + String(data, 8));
 }
 
 void Interface::handleFOCVoltageLPFTauSet(float data) {
     focControllerX.setFOCVoltageLPFTau(data);
     focControllerY.setFOCVoltageLPFTau(data);
-    Serial.println("FOC voltage LPF tau set to: " + String(data, 8));
 }
 
 void Interface::handleVelocityFeedForwardSet(float data) {
     focControllerX.setVelocityFeedForward(data);
     focControllerY.setVelocityFeedForward(data);
-    Serial.println("Velocity feed-forward set to: " + String(data));
 }
 
 void Interface::handleReconfigureLDM(float data) {
     if (stateMachine.enabled) {
-        Serial.println("To reconfigure the LDM first disable the system.");
+        faultManager.addFault(FAULT_CMD_REJECTED_STATE);
         return;
     }
     int config_num = static_cast<uint16_t>(data);
-    Serial.println("Reconfiguring LDM to preset " + String(config_num));
     ldm.reconfigure(config_num);
 }
 
 void Interface::handleThetaPhaseIncSet(float data) {
     uint32_t value = static_cast<uint32_t>(data);
     scanPath.setThetaPhaseInc(value);
-    Serial.println("Theta phase increment set to: " + String(value));
 }
 
 void Interface::handlePhiPhaseIncSet(float data) {
     uint32_t value = static_cast<uint32_t>(data);
     scanPath.setPhiPhaseInc(value);
-    Serial.println("Phi phase increment set to: " + String(value));
 }
 
 void Interface::handleThetaAmplitudeSet(float data) {
     scanPath.setThetaAmplitude(data);
-    Serial.println("Theta amplitude set to: " + String(data));
 }
 
 void Interface::handlePhiAmplitudeSet(float data) {
     scanPath.setPhiAmplitude(data);
-    Serial.println("Phi amplitude set to: " + String(data));
 }
 
 void Interface::handleThetaCentreSet(float data) {
     scanPath.setThetaCentre(data);
-    Serial.println("Theta centre set to: " + String(data));
 }
 
 void Interface::handlePhiCentreSet(float data) {
     scanPath.setPhiCentre(data);
-    Serial.println("Phi centre set to: " + String(data));
 }
 
 void Interface::sendControlPacket() {
+    // Live mechanical angles for the motor-control UI (UI/realtime_plotter.py).
     ControlPacket packet = {
         CONTROL_PACKET_HEADER,
         focControllerX.getTargetAngle(),
         focControllerY.getTargetAngle(),
         ldm.getLatestDistance(),
-        angleTrackerX.getAssociatedAngle(),
-        angleTrackerY.getAssociatedAngle()
+        sensorX.getLatestRotorAngle(),
+        sensorY.getLatestRotorAngle()
     };
     Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }   
@@ -314,8 +326,6 @@ void Interface::sendStatusPacket() {
         sensorX.getAngleLPFTau(),
         focControllerX.getFOCVoltageLPFTau(),
         focControllerX.getVelocityFeedForward()
-        // add health and errors here
     };
     Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }
-

@@ -1,8 +1,7 @@
-Implement S-curve torque shape towards set points.
-Make listener a non-blocking stateful switch machine and add a length double byte to the packets.
-System health flag
-Error mechanism where errors are passed to the host in the status packet only where there are any!
+Reintroduce debug messages
+Debug enable fail
 
+Implement S-curve torque shape towards set points.
 
 
 IMPROVING FOC PERFORMANCE -- TO TRY

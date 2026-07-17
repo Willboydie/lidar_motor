@@ -1,4 +1,6 @@
 #include "GarminV3HP.hpp"
+#include "../fault_manager/FaultManager.hpp"
+#include "../debug/Debug.hpp"
 
 GarminV3HP::GarminV3HP(int _scl, int _sda, int _mode_pin) : LDM(_scl, _sda, _mode_pin) {}
 
@@ -16,11 +18,12 @@ void GarminV3HP::init() {
     
     config_number = 0; // Default mode, balanced performance
     configure();
+    Debug::msg("LDM CONFIGURED");
     markInitialised();
-    enable();
+    enabled = true;
     resetReferenceFilter();
-    disable();
-    Serial.println("GarminV3HP initialised with interrupt mode.");
+    enabled = false;
+    Debug::msg("LDM INITIALISED");
 }
 
 /*------------------------------------------------------------------------------
@@ -108,12 +111,11 @@ void GarminV3HP::configure() {
 
 void GarminV3HP::reconfigure(int config_num) {
     if (enabled) {
-        Serial.println("Disable the Garmin first to change the configuration.");
+        faultManager.addFault(FAULT_LDM_CONFIG);
         return;
     }
     config_number = config_num;
     configure();
-    Serial.println("Garmin V3HP configured to preset " + String(config_number));
 }
 
 
@@ -137,7 +139,7 @@ void GarminV3HP::write(uint8_t reg, uint8_t* data_bytes, uint8_t length) {
     Wire.beginTransmission(address);
     Wire.write(reg);
     Wire.write(data_bytes, length);
-    if ( Wire.endTransmission() ) Serial.println("> nack");
+    if ( Wire.endTransmission() ) faultManager.addFault(FAULT_LDM_I2C);
     delayMicroseconds(DEFAULT_DELAY);
 }
 
@@ -151,7 +153,7 @@ void GarminV3HP::read(uint8_t reg,  uint8_t * data_bytes, uint8_t length) {
     Wire.beginTransmission(address);
     Wire.write(reg);
     if (Wire.endTransmission(false)) {  // repeated start
-        Serial.println("> nack");
+        faultManager.addFault(FAULT_LDM_I2C);
     }
     Wire.requestFrom(address, length, (uint8_t)true);
 
@@ -184,10 +186,21 @@ void GarminV3HP::resetReferenceFilter() {
     data_bytes[0] = 0xff;                         // we want to reference to overflow quickly
     write(0x12, data_bytes, 1); // write ref integration count
 
-    // Trigger a measurement
+    // Trigger a measurement and wait on the MODE pin directly. Called from
+    // init() before enable()/attachInterrupt, so isDataReady() would never
+    // become true (ISR is not armed yet). MODE = LOW busy, HIGH ready.
     requestDistance();
-    while ( !isDataReady() ) {
-        delay(100);
+    const unsigned long startTime = millis();
+    while (digitalRead(MODE_PIN) == HIGH && millis() - startTime < 5) {
+        // brief wait for falling edge into busy
+    }
+    while (digitalRead(MODE_PIN) == LOW && millis() - startTime < 1000) {
+        delay(1);
+    }
+    if (digitalRead(MODE_PIN) == LOW) {
+        faultManager.addFault(FAULT_LDM_TIMEOUT);
+        Debug::msg("LDM TIMEOUT");
+        return;
     }
     // ... no need to read the distance, it is immaterial
 
@@ -198,4 +211,5 @@ void GarminV3HP::resetReferenceFilter() {
     // Restore previous acquisition configuration register (re-enabling reference filter)
     data_bytes[0] = acqConfigReg;
     write(0x04, data_bytes, 1);
+    Debug::msg("REFERENCE FILTER RESET");
 }

@@ -12,6 +12,8 @@
 #include "../utils/quick_defs.h"
 #include "../utils/tweakable_params.h"
 #include "../state_machine/StateMachine.hpp"
+#include "../fault_manager/FaultManager.hpp"
+#include "../debug/Debug.hpp"
 
 // Cascaded-loop periods [us], derived from the editable rates in tweakable_params.h.
 // loop() runs the whole cascade at (at most) the current-loop rate and gates the

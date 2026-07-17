@@ -19,8 +19,8 @@
 #define CURRENT_D 0.0f
 #define CURRENT_RAMP 0.0f
 // -------------------------------------------------
-#define ANGLE_P 1.0f
-#define ANGLE_I 0.5f
+#define ANGLE_P 3.0f
+#define ANGLE_I 3.0f
 #define ANGLE_D 0.0f
 #define ANGLE_RAMP 0.0f
 #define VELOCITY_UPPER_LIMIT 15.0f   // rad/s

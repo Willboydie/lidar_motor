@@ -1,4 +1,6 @@
 #include "LDM.hpp"
+#include "../debug/Debug.hpp"
+#include "../fault_manager/FaultManager.hpp"
 
 // Global pointer for ISR to access the instance
 static LDM* ldmInstance = nullptr;
@@ -15,7 +17,7 @@ LDM::LDM(int _scl, int _sda, int _mode_pin) : SCL(_scl), SDA(_sda), MODE_PIN(_mo
 void LDM::enable() {
     if (enabled) return;
     if (!initialised) {
-        Serial.println("Can't enable LDM - not initialised");
+        faultManager.addFault(FAULT_SYS_NOT_INITIALISED);
         return;
     }
     enabled = true;
@@ -23,6 +25,7 @@ void LDM::enable() {
     attachInterrupt(digitalPinToInterrupt(MODE_PIN), ldmISR, RISING);
     dataReady = false;  // Reset state when re-enabling
     triggerMeasurement();  // Trigger initial measurement
+    Debug::msg("LDM ENABLED");
 }
 
 void LDM::disable() {

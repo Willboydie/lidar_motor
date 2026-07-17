@@ -2,11 +2,11 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-// L15 — dual-axis simultaneous FOC (StateMachine + Interface + SinusoidalScanPath).
-#include "tests/foc/dual_foc_test.hpp"
+// L0 — MCU & toolchain (alive + loop timing + heartbeat).
+#include "tests/mcu/mcu_l0_test.hpp"
 
 void setup() {
-    dual_foc_test();
+    mcu_l0_test();
 }
 
 void loop() {}

@@ -13,13 +13,15 @@ public:
     Sensor();
     virtual ~Sensor() = default;
     
-    virtual bool init() = 0;
-    virtual void deinit() = 0;
-    
+    bool init();
+    void deinit();
     void enable();
     void disable();
     bool update();
     virtual void updateDiagnostics() = 0;
+
+    bool isInitialised() { return initialised; }
+    bool isEnabled() { return enabled; }
 
     float getLatestRotorAngle() { return raw_sensor_angle; }
     float getRawAngularVelocity() { return raw_angular_velocity; }
@@ -44,6 +46,8 @@ public:
     float getAngleLPFTau() const { return angleLPF.getTau(); }
 
 private:
+    virtual bool hardwareInit() = 0;
+    virtual void hardwareDeinit() = 0;
     virtual float getSensorAngle() = 0;
 
     float raw_sensor_angle = 0.0f;

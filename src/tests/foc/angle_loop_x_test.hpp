@@ -35,6 +35,12 @@ inline void angle_loop_x_test() {
     foc.setCurrentSense(current_sense);
 #endif
 
+    if (!sensor.init()) {
+        Serial.println("RESULT angle_loop_x FAIL encoder_init=0");
+        while (true) { delay(1000); }
+    }
+    sensor.enable();
+
     if (!foc.init()) {
         Serial.println("RESULT angle_loop_x FAIL foc_init=0");
         while (true) { delay(1000); }

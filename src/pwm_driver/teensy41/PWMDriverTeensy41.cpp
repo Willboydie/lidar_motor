@@ -1,4 +1,5 @@
 #include "PWMDriverTeensy41.hpp"
+#include "../../fault_manager/FaultManager.hpp"
 
 // if compiling for a Teensy 4.1
 #if defined(__arm__) && defined(CORE_TEENSY) && ( defined(__IMXRT1062__) || defined(ARDUINO_TEENSY41) )
@@ -152,8 +153,6 @@ void* PWMDriverTeensy41::configure3PWM(long pwm_frequency,const int pinA, const 
   // if pins belong to the flextimers and they only use submodules A and B
   // we can configure the center-aligned pwm
   if ((flexpwmA != nullptr) && (flexpwmB != nullptr) && (flexpwmC != nullptr) && (channelA > 0) && (channelB > 0) && (channelC > 0)) {
-    Serial.println("TEENSY-DRV: All pins on Flexpwm A or B channels - Configuring center-aligned pwm!");
-
     // Each distinct submodule is configured once. B and C often share one counter
     // (A/B channels on the same submodule); the old code configured that submodule
     // twice and XBAR-synced it to itself.
@@ -200,7 +199,7 @@ void* PWMDriverTeensy41::configure3PWM(long pwm_frequency,const int pinA, const 
 
     return params;
   } else {
-    Serial.println("TEENSY-DRV: Not all pins on Flexpwm A and B channels - cannot configure center-aligned pwm!");
+    faultManager.addFault(FAULT_PWM_SYNC);
     return nullptr;
   }  
 }

@@ -1,4 +1,5 @@
 #include "Sensor.hpp"
+#include "../debug/Debug.hpp"
 
 // constexpr int32_t _3adapted_cpr_4 = (3 * ADAPTED_CPR) / 4;
 // constexpr int32_t adapted_cpr = ADAPTED_CPR;
@@ -10,9 +11,17 @@ constexpr uint32_t velocity_estimation_dt_us = VELOCITY_ESTIMATION_DT_US;
 
 Sensor::Sensor() {}
 
+bool Sensor::init() {
+    if (initialised) return true;
+    if (!hardwareInit()) return false;
+    if (!update()) return false;
+    initialised = true;
+    Debug::msg("SENSOR INITIALISED");
+    return true;
+}
+
 bool Sensor::update() {
     if (!initialised) {
-        Serial.println("Sensor not initialised");
         return false;
     }
     
@@ -43,7 +52,6 @@ bool Sensor::update() {
     return true;
 }
 
-
 void Sensor::enable() {
     if (enabled) return;
     enabled = true;
@@ -51,11 +59,19 @@ void Sensor::enable() {
     previous_raw_angle = getSensorAngle();
     raw_angular_velocity = 0.0f;
     filtered_angular_velocity = velocityLPF(0.0f);
+    Debug::msg("SENSOR ENABLED");
 }
 
 void Sensor::disable() {
     if (!enabled) return;
     enabled = false;
+    Debug::msg("SENSOR DISABLED");
+}
+
+void Sensor::deinit() {
+    if (!initialised) return;
+    hardwareDeinit();
+    initialised = false;
 }
 
 void Sensor::clearDebugData() {

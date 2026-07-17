@@ -2,20 +2,22 @@
 
 // init hardware pins
 bool PWMDriver::init() {
+  if (initialised) return true;
+
   // PWM pins
   pinMode(n1, OUTPUT);
   pinMode(n2, OUTPUT);
   pinMode(n3, OUTPUT);
   pinMode(en, OUTPUT);
-  
 
   // Set the pwm frequency to the pins
   // hardware specific function - depending on driver and mcu
   params = configure3PWM(pwm_frequency, n1, n2, n3);
+  if (params == nullptr) return false;
 
   digitalWrite(en, HIGH);  // Activate the driver
-
-  return params!=nullptr; 
+  initialised = true;
+  return true;
 }
 
 
@@ -39,7 +41,6 @@ void PWMDriver::disable() {
   if (!enabled) return;
   setPwm(0.0f, 0.0f, 0.0f);
   digitalWrite(en, LOW);
-  Serial.println("PWMDriver disabled");
   enabled = false;
 }
 
@@ -47,7 +48,6 @@ void PWMDriver::disable() {
 void PWMDriver::enable() {
   if (enabled) return;
   digitalWrite(en, HIGH);
-  Serial.println("PWMDriver enabled");
   enabled = true;
 }
 
@@ -66,4 +66,5 @@ void PWMDriver::deinit() {
   // Free heap memory
   cleanupParams(params);
   params = nullptr;
+  initialised = false;
 }

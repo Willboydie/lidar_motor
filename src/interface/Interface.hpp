@@ -12,6 +12,8 @@
 #include "utils/constants.h"
 #include "utils/quick_defs.h"
 #include "utils/tweakable_params.h"
+#include "fault_manager/FaultManager.hpp"
+#include "system_manager/SystemManager.hpp"
 
 // state machine
 #define DISABLE_ENABLE_CMD 0b00000001
@@ -45,8 +47,12 @@
 #define TARGET_X_SET_CMD 0b00010000
 #define TARGET_Y_SET_CMD 0b00010100
 
-#define ELECTRICAL_OFFSET_X_SET_CMD 0b00011000
-#define ELECTRICAL_OFFSET_Y_SET_CMD 0b00011001
+#define SLEEP_CMD 0b00011000
+#define WAKE_CMD 0b00011001
+#define RESTART_CMD 0b00011010
+#define ENTER_BOOTLOADER_CMD 0b00011011
+
+#define GET_ERROR_MSG_CMD 0b00011100
 
 // Outgoing binary packet headers (distinct from each other and from command bytes)
 #define CONTROL_PACKET_HEADER 0b01010101  // 0x55 — hot-path closed-loop telemetry
@@ -58,8 +64,8 @@ struct ControlPacket {
     float target_angle_x;
     float target_angle_y;
     uint16_t distance;
-    float associated_angle_x;
-    float associated_angle_y;
+    float mechanical_angle_x;  // live rotor angle [rad] — motor-control UI / plotter
+    float mechanical_angle_y;
 };
 
 struct StatusPacket {
@@ -96,7 +102,9 @@ public:
         LDM& _ldm,
         AngleTracker& _angleTrackerX,
         AngleTracker& _angleTrackerY,
-        ScanPath& _scanPath
+        ScanPath& _scanPath,
+        FaultManager& _faultManager,
+        SystemManager& _systemManager
     );
     void processCommand(uint8_t cmd, float data);
     void commandListener();
@@ -104,6 +112,11 @@ public:
     void sendStatusPacket();
     
 private:
+    void handleSleep();
+    void handleWake();
+    void handleRestart();
+    void handleEnterBootloader();
+    void handleGetErrorMessage();
     void handleDisableEnable();
     void handlePlayPause();
     void handleToggleControlMode();
@@ -139,7 +152,10 @@ private:
     LDM& ldm;
     AngleTracker& angleTrackerX;
     AngleTracker& angleTrackerY;
-    ScanPath& scanPath;
+    ScanPath& scanPath;    
+    FaultManager& faultManager;
+    SystemManager& systemManager;
+    
     uint8_t cmd;
     float data; // temporary storage for command data
 };

@@ -84,8 +84,8 @@
 // this, calculate_electrical_angle() injected d-axis (radial, torque-free) current:
 // same coil current, almost no torque (L10 symptom). Values are the L9.2 means minus
 // pi/2:  X = 3.1802 - pi/2 = 1.6094 rad,  Y = 2.7796 - pi/2 = 1.2088 rad.
-#define SENSOR_OFFSET_X 1.6094f // electrical offset in radians (q-axis corrected)
-#define SENSOR_OFFSET_Y 1.2088f
+#define SENSOR_OFFSET_X 6.2822f //1.6094f // electrical offset in radians (q-axis corrected)
+#define SENSOR_OFFSET_Y 1.2082f //1.2088f
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 
@@ -111,6 +111,9 @@
 
 // Serial Parameters
 #define BAUD_RATE 460800
+
+// Debug
+#define DEFAULT_DEBUG_SETTING true
 
 // EXACT VALUES
 #define _2_SQRT3 1.15470053838f

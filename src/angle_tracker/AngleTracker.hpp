@@ -1,26 +1,27 @@
 #pragma once
 
 #include "../sensor/Sensor.hpp"
-#include "../utils/tweakable_params.h"
-#include "../utils/quick_defs.h"
+#include "../utils/constants.h"
+#include "../fault_manager/FaultManager.hpp"
 
-class LidarEngine {
+class AngleTracker {
 
 public:
-    AngleTracker(Sensor& _sensor);
+    AngleTracker(Sensor& _sensor, FaultManager& _fault_manager, FaultCode _overflow_fault);
     ~AngleTracker() = default;
 
-    void update_angle_tracking();
-    float calculate_associated_angle();
+    void update();
+    void calculateMedianAverage();
+    float getAssociatedAngle() const { return median_average; }
 
 private:
+    void reset();
+
     Sensor& sensor;
+    FaultManager& fault_manager;
+    FaultCode overflow_fault;
 
     float median_average = 0.0f;
-
-    float count = 0;
-    constexpr float window_size = ANGLE_TRACKING_WINDOW_SIZE;
-    constexpr float limit = ANGLE_TRACKING_LIMIT;
-    float angles[limit];
-
+    int count = 0;
+    float angles[ANGLE_TRACKING_LIMIT];
 };

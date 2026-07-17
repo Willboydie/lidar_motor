@@ -12,23 +12,19 @@ FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _mo
 , motor_electrical_offset(_motor.electrical_offset)
 {};
 
+static inline bool isMotorX(int motor_number) { return motor_number == 1; }
+
 bool FOCController::init() {
-    Serial.println("Initialising FOC controller for motor " + String(motor_number) + "...");
-
-    if (!sensor.init()) {
-        Serial.println("Failed to initialize sensor");
+    if (!sensor.isInitialised()) {
+        faultManager.addFault(isMotorX(motor_number) ? FAULT_FOC_X_INIT : FAULT_FOC_Y_INIT);
+        Debug::msg("FOC CONTROLLER INIT FAILED: SENSOR NOT INITIALISED");
+        return false;
+    } else if (!pwm_driver.isInitialised()) {
+        faultManager.addFault(isMotorX(motor_number) ? FAULT_FOC_X_INIT : FAULT_FOC_Y_INIT);
+        Debug::msg("FOC CONTROLLER INIT FAILED: PWM DRIVER NOT INITIALISED");
         return false;
     }
-    if (!pwm_driver.init()) {
-        Serial.println("Failed to initialize pwm driver");
-        return false;
-    }
-
-    if (!sensor.update()) {
-        Serial.println("Failed to update sensor");
-        return false;
-    }
-
+    
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
     target_angle = mechanical_angle;
@@ -36,7 +32,6 @@ bool FOCController::init() {
     target_q_current = 0.0f;
     target_d_current = 0.0f;
     last_current_us = last_velocity_us = last_angle_us = 0; // run every stage on first loop()
-    Serial.println("FOC controller for motor " + String(motor_number) + " initialised. Starting mechanical angle: " + String(mechanical_angle, 3) + " rad");
     initialised = true;
     return true;
 }
@@ -52,7 +47,7 @@ bool FOCController::init() {
 bool FOCController::loop() {
     if (!enabled) return false;
     if (!initialised) {
-        Serial.println("Can't loop FOC controller - not initialised");
+        faultManager.addFault(FAULT_SYS_NOT_INITIALISED);
         return false;
     }
 
@@ -61,7 +56,7 @@ bool FOCController::loop() {
     last_current_us = now_us;
 
     if (!sensor.update()) {
-        Serial.println("Failed to update sensor");
+        faultManager.addFault(isMotorX(motor_number) ? FAULT_ENC_X_UPDATE : FAULT_ENC_Y_UPDATE);
         return false;
     }
     mechanical_angle = sensor.getLatestRotorAngle();
@@ -117,6 +112,7 @@ void FOCController::currentLoop() {
         Vq = 0.0f;
         Vd = 0.0f;
         LPF_voltage.reset();
+        faultManager.addFault(isMotorX(motor_number) ? FAULT_FOC_X_NAN_COMMAND : FAULT_FOC_Y_NAN_COMMAND);
     }
 }
 
@@ -125,7 +121,7 @@ void FOCController::currentLoop() {
 // from micros(), so it can run at full superloop speed for the tightest loop.
 bool FOCController::currentLoopStep(float iq_target, float id_target) {
     if (!sensor.update()) {
-        Serial.println("Failed to update sensor");
+        faultManager.addFault(isMotorX(motor_number) ? FAULT_ENC_X_UPDATE : FAULT_ENC_Y_UPDATE);
         return false;
     }
     mechanical_angle = sensor.getLatestRotorAngle();
@@ -166,7 +162,6 @@ void FOCController::setPhaseVoltage() {
     Vb += center;
     Vc += center;
 
-    // Serial.println("Vq: " + String(Vq) + " Vd: " + String(Vd) + "  |   Va: " + String(Va) + " Vb: " + String(Vb) + " Vc: " + String(Vc));
     pwm_driver.setPwm(Va, Vb, Vc);
 }
 
@@ -185,11 +180,10 @@ float FOCController::estimate_Vq(float _Iq) {
 void FOCController::enable() {
     if (enabled) return;
     if (!initialised) {
-        Serial.println("Can't enable FOC controller for motor " + String(motor_number) + " - not initialised");
+        faultManager.addFault(FAULT_SYS_NOT_INITIALISED);
         return;
     }
     pwm_driver.enable();
-    sensor.enable();
     PID_angle_controller.reset();
     PID_velocity_controller.reset();
     PID_current_q.reset();
@@ -197,6 +191,7 @@ void FOCController::enable() {
     LPF_voltage.reset();
     last_current_us = last_velocity_us = last_angle_us = 0; // run every stage on first loop()
     enabled = true;
+    Debug::msg("FOC CONTROLLER ENABLED");
 }
 
 void FOCController::disable() {
@@ -206,8 +201,8 @@ void FOCController::disable() {
     PID_current_q.reset();
     PID_current_d.reset();
     pwm_driver.disable();
-    sensor.disable();
     enabled = false;
+    Debug::msg("FOC CONTROLLER DISABLED");
 }
 
 
@@ -242,7 +237,7 @@ void FOCController::deinit() {
 // ---------- Calibration ----------
 void FOCController::calibrate() {
     if (!initialised) {
-        Serial.println("Can't calibrate FOC controller - not initialised");
+        faultManager.addFault(FAULT_SYS_NOT_INITIALISED);
         return;
     }
 

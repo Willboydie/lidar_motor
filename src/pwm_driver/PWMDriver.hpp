@@ -22,6 +22,9 @@ public:
   void setPwm(float Va, float Vb, float Vc);
   float getVoltageLimit() { return voltage_limit; }
 
+  bool isInitialised() { return initialised; }
+  bool isEnabled() { return enabled; }
+
 protected:
   int n1;
   int n2;
@@ -44,4 +47,5 @@ private:
   virtual void cleanupParams(void* params) = 0;
 
   bool enabled = false;
+  bool initialised = false;
 };

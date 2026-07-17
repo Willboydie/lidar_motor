@@ -11,3 +11,6 @@ env/
 ENV/
 open3d_env/
 open3d_venv/
+myvenv/
+
+.claude/

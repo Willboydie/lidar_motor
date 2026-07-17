@@ -12,4 +12,5 @@
 class InlineCurrentSenseTeensy41 : public InlineCurrentSense {
 public:
     PhaseCurrent_s getPhaseCurrents() override { return PhaseCurrent_s{0.0f, 0.0f, 0.0f}; }
+    bool init() override { return true; }
 };

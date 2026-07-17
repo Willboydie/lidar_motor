@@ -6,6 +6,8 @@
 
 #include "Arduino.h"
 #include "../InlineCurrentSense.hpp"
+#include "../../fault_manager/FaultManager.hpp"
+#include "../../utils/constants.h"
 
 #if defined(STM32G4xx)
 
@@ -19,7 +21,7 @@ public:
 
     // hardware_trigger=true: §3.2 TRGO+DMA (production). false: Stage 7 software scan only.
     // defer_dma_start=true: run steps 1–7 only; call startDma() or commitDualDmaStart() next.
-    bool init(bool hardware_trigger = true, bool defer_dma_start = false);
+    bool init(bool hardware_trigger = true, bool defer_dma_start = false) override;
     bool startDma();
     static bool commitDualDmaStart(InlineCurrentSenseSTM32G4& a, InlineCurrentSenseSTM32G4& b);
 
@@ -51,6 +53,10 @@ public:
 
     // Called from HAL_ADC_ConvCpltCallback (same translation unit).
     void notifyConvComplete();
+
+    FaultCode csInitFault() const {
+        return (pinA == ADC_CS_Y_1 || pinA == ADC_CS_Y_2) ? FAULT_CS_Y_INIT : FAULT_CS_X_INIT;
+    }
 
     static constexpr float adc_voltage_conv = 3.3f / 4096.0f;
 
