@@ -65,9 +65,13 @@ bool FOCController::loop() {
 
     // --- Angle loop (outermost): angular error -> target velocity ---
     if (controlMode == ANGLE && (uint32_t)(now_us - last_angle_us) >= ANGLE_LOOP_DT_US) {
+        float dt = (now_us - last_angle_us) / 1000000.0f;
         last_angle_us = now_us;
+
+        s_curve.updateTargets(dt);
+        target_angle += s_curve.getTargetPos();
         angular_error = findAngularError(target_angle, mechanical_angle);
-        target_velocity = PID_angle_controller(angular_error);
+        target_velocity = PID_angle_controller(angular_error) + s_curve.getTargetV();
     }
 
     // --- Velocity loop: velocity error -> target q current ---
@@ -75,8 +79,12 @@ bool FOCController::loop() {
         last_velocity_us = now_us;
         velocity_error = target_velocity - angular_velocity;
         const float Iq_pid = PID_velocity_controller(velocity_error);
-        const float Iq_ff  = K_vff * target_velocity;
-        target_q_current = _constrain(Iq_pid + Iq_ff, -MOTOR_CURRENT_LIMIT, MOTOR_CURRENT_LIMIT);
+        const float Iq_vff  = K_vff * target_velocity;
+        float Iq_aff = 0.0f;
+        if (controlMode == ANGLE) {
+            Iq_aff = K_aff * s_curve.getTargetA();
+        }
+        target_q_current = _constrain(Iq_pid + Iq_vff + Iq_aff, -MOTOR_CURRENT_LIMIT, MOTOR_CURRENT_LIMIT);
     }
 
     // --- Current loop (innermost): target current -> Vd/Vq ---
@@ -220,10 +228,9 @@ void FOCController::setControlMode(ControlMode _controlMode) {
     controlMode = _controlMode;
 }
 
-void FOCController::setTargetAngle(float _target_world_angle) { 
-    // float target_local_angle = worldToLocal(motor_number, _target_world_angle); 
-    // target_angle = target_local_angle; 
-    target_angle =  _target_world_angle;
+void FOCController::setTargetAngle(float _target_angle) { 
+    float D = _target_angle - mechanical_angle;
+    s_curve.update_params(D);
 }
 
 

@@ -14,6 +14,7 @@
 #include "../state_machine/StateMachine.hpp"
 #include "../fault_manager/FaultManager.hpp"
 #include "../debug/Debug.hpp"
+#include "../s_curve/SCurve.hpp"
 
 // Cascaded-loop periods [us], derived from the editable rates in tweakable_params.h.
 // loop() runs the whole cascade at (at most) the current-loop rate and gates the
@@ -55,7 +56,7 @@ public:
     float getVc() { return Vc; }
 
     void setControlMode(ControlMode _controlMode);
-    void setTargetAngle(float _target_world_angle);
+    void setTargetAngle(float _target_angle);
     void setTargetVelocity(float _target_velocity) { target_velocity = _target_velocity; }
     void setVelocityP(float _velocity_p) { PID_velocity_controller.setP(_velocity_p); }
     void setVelocityI(float _velocity_i) { PID_velocity_controller.setI(_velocity_i); }
@@ -162,12 +163,15 @@ private:
     PIDControl PID_current_q{CURRENT_P, CURRENT_I, CURRENT_D, CURRENT_RAMP, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT};
     PIDControl PID_current_d{CURRENT_P, CURRENT_I, CURRENT_D, CURRENT_RAMP, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT};
 
+    SCurve s_curve(JERK_MAX, ACCEL_MAX, EPS);
+
     // Inline current sense (STM32G4). Null on targets without sensing -> voltage model.
     InlineCurrentSense* current_sense = nullptr;
 
     _LowPassFilter LPF_voltage{FOC_VOLTAGE_LPF_TAU};
 
-    float K_vff = 0.0f;   // A / (rad/s) - velocity feedforward gain
+    float K_vff = DEFAULT_VELOCITY_FEEDFORWARD_GAIN;   // A / (rad/s) - velocity feedforward gain
+    float K_aff = DEFAULT_ACCELERATION_FEEDFORWARD_GAIN;   // A / (rad/s^2) - acceleration feedforward gain
   
     bool enabled = false;
     bool initialised = false;

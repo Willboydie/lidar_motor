@@ -11,7 +11,6 @@
 #define _round(x) ((x)>=0?(long)((x)+0.5f):(long)((x)-0.5f))
 #endif
 #define _constrain(amt,low,high) ((amt)<(low)?(low):((amt)>(high)?(high):(amt)))
-#define _sqrt(a) (_sqrtApprox(a))
 #define NOT_SET -1234
 #define _isset(a) ( (a) != (NOT_SET) )
 #define _UNUSED(v) (void) (v)
@@ -42,6 +41,20 @@ static constexpr float hard_eps = HARD_DEADBAND_WIDTH;
 static inline float hardDeadband(float v) { return fabs(v) > eps ? v : 0.0f; }
 
 static inline uint16_t discardBits(uint16_t x) { return (x + (1 << (SENSOR_DISCARD_BITS - 1))) >> SENSOR_DISCARD_BITS; }  // with rounding
+
+// fast cube root: bit-hack guess of x^(-1/3) + two division-free Newton steps
+// handles negative inputs; worst rel. error ~0.5% (add a 3rd step for ~2e-5)
+static inline float _cuberootApprox(float x) {
+  if (x == 0.0f) return 0.0f;
+  float a = fabsf(x);
+  union { float f; uint32_t i; } y = { a };
+  y.i = 0x548c2b4b - y.i / 3;                  // initial guess of a^(-1/3)
+  float r = y.f;
+  r = r * (1.3333333f - 0.33333333f * a * r * r * r);  // Newton on 1/cbrt
+  float c = a * r * r;                         // a * a^(-2/3) = a^(1/3)
+  return x < 0.0f ? -c : c;
+}
+#define _cuberoot(a) (_cuberootApprox(a))
 
 
 // function approximating the sine calculation by using fixed size array

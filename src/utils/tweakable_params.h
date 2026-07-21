@@ -26,6 +26,14 @@
 #define VELOCITY_UPPER_LIMIT 15.0f   // rad/s
 #define VELOCITY_LOWER_LIMIT -15.0f
 
+// Velocity Feedforward Gain
+#define DEFAULT_VELOCITY_FEEDFORWARD_GAIN 0.5f
+#define DEFAULT_ACCELERATION_FEEDFORWARD_GAIN 0.5f
+
+// S-Curve Parameters
+#define JERK_MAX 100.0f
+#define ACCEL_MAX 100.0f
+#define EPS 0.01f
 
 // Scan Path Parameters
 #define UPDATE_PERIOD_US 2000 // 2ms / 500Hz

@@ -1,4 +1,11 @@
 Implement S-curve torque shape towards set points.
+    - fix control loop
+    - clamp past 4*tau
+    - begin testing the system
+        o Plot the targets with time using realtime plotter to check shape (no power). Velocity targets too.
+
+Implement a motor setpoint ring buffer system to facilitate smooth movement between points.
+
 Experiment with a python host closed loop scanner
     1. Open loop coarse lissajous
     2. Closed loop adaptive stepping
