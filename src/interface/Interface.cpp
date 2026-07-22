@@ -86,6 +86,9 @@ void Interface::processCommand(uint8_t cmd, float data) {
         case VELOCITY_FF_SET_CMD:
             handleVelocityFeedForwardSet(data);
             break;
+        case ACCELERATION_FF_SET_CMD:
+            handleAccelerationFeedForwardSet(data);
+            break;
         case RECONFIGURE_LDM_CMD:
             handleReconfigureLDM(data);
             break;
@@ -260,6 +263,11 @@ void Interface::handleVelocityFeedForwardSet(float data) {
     focControllerY.setVelocityFeedForward(data);
 }
 
+void Interface::handleAccelerationFeedForwardSet(float data) {
+    focControllerX.setAccelerationFeedForward(data);
+    focControllerY.setAccelerationFeedForward(data);
+}
+
 void Interface::handleReconfigureLDM(float data) {
     if (stateMachine.enabled) {
         faultManager.addFault(FAULT_CMD_REJECTED_STATE);
@@ -327,7 +335,8 @@ void Interface::sendStatusPacket() {
         sensorX.getVelocityLPFTau(),
         sensorX.getAngleLPFTau(),
         focControllerX.getFOCVoltageLPFTau(),
-        focControllerX.getVelocityFeedForward()
+        focControllerX.getVelocityFeedForward(),
+        focControllerX.getAccelerationFeedForward()
     };
     Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }

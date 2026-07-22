@@ -19,21 +19,20 @@
 #define CURRENT_D 0.0f
 #define CURRENT_RAMP 0.0f
 // -------------------------------------------------
-#define ANGLE_P 3.0f
-#define ANGLE_I 3.0f
+#define ANGLE_P 10.0f
+#define ANGLE_I 2.0f
 #define ANGLE_D 0.0f
 #define ANGLE_RAMP 0.0f
 #define VELOCITY_UPPER_LIMIT 15.0f   // rad/s
 #define VELOCITY_LOWER_LIMIT -15.0f
 
 // Velocity Feedforward Gain
-#define DEFAULT_VELOCITY_FEEDFORWARD_GAIN 0.5f
-#define DEFAULT_ACCELERATION_FEEDFORWARD_GAIN 0.5f
+#define DEFAULT_VELOCITY_FEEDFORWARD_GAIN 0.0f
+#define DEFAULT_ACCELERATION_FEEDFORWARD_GAIN 0.0f
 
 // S-Curve Parameters
-#define JERK_MAX 100.0f
-#define ACCEL_MAX 100.0f
-#define EPS 0.01f
+#define JERK_MAX 1.0f
+#define ACCEL_MAX 1.0f
 
 // Scan Path Parameters
 #define UPDATE_PERIOD_US 2000 // 2ms / 500Hz

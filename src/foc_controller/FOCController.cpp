@@ -1,9 +1,10 @@
 #include "FOCController.hpp"
 
-FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor) 
+FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor, SCurve& _s_curve) 
 : motor_number(_motor.motor_number)
 , sensor(_sensor)
 , pwm_driver(_pwm_driver)
+, s_curve(_s_curve)
 , motor_phase_resistance(_motor.phase_resistance)
 , motor_K_v(_motor.K_v)
 , motor_K_e(_motor.K_e)
@@ -28,6 +29,7 @@ bool FOCController::init() {
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
     target_angle = mechanical_angle;
+    last_checkpoint_angle = mechanical_angle;
     target_velocity = 0.0f;
     target_q_current = 0.0f;
     target_d_current = 0.0f;
@@ -52,7 +54,10 @@ bool FOCController::loop() {
     }
 
     const uint32_t now_us = micros();
-    if ((uint32_t)(now_us - last_current_us) < CURRENT_LOOP_DT_US) return true;
+    const uint32_t current_dt_us = now_us - last_current_us;
+    if (current_dt_us < CURRENT_LOOP_DT_US) return true;
+    const float dt = current_dt_us / 1000000.0f;
+    s_curve.updateTime(dt);
     last_current_us = now_us;
 
     if (!sensor.update()) {
@@ -64,27 +69,30 @@ bool FOCController::loop() {
     angular_velocity = sensor.getFilteredAngularVelocity();
 
     // --- Angle loop (outermost): angular error -> target velocity ---
-    if (controlMode == ANGLE && (uint32_t)(now_us - last_angle_us) >= ANGLE_LOOP_DT_US) {
-        float dt = (now_us - last_angle_us) / 1000000.0f;
+    const uint32_t angle_dt_us = now_us - last_angle_us;
+    if (controlMode == ANGLE && angle_dt_us >= ANGLE_LOOP_DT_US) {
         last_angle_us = now_us;
 
-        s_curve.updateTargets(dt);
-        target_angle += s_curve.getTargetPos();
+        s_curve.updatePosTarget(approach_angle);
+        target_angle = last_checkpoint_angle + approach_angle;
         angular_error = findAngularError(target_angle, mechanical_angle);
-        target_velocity = PID_angle_controller(angular_error) + s_curve.getTargetV();
+        target_velocity = PID_angle_controller(angular_error) + approach_velocity;
     }
 
     // --- Velocity loop: velocity error -> target q current ---
-    if ((uint32_t)(now_us - last_velocity_us) >= VELOCITY_LOOP_DT_US) {
+    const uint32_t velocity_dt_us = now_us - last_velocity_us;
+    if (velocity_dt_us >= VELOCITY_LOOP_DT_US) {
         last_velocity_us = now_us;
+
+        s_curve.updateVeloAccelTarget(approach_velocity, approach_acceleration);
         velocity_error = target_velocity - angular_velocity;
         const float Iq_pid = PID_velocity_controller(velocity_error);
-        const float Iq_vff  = K_vff * target_velocity;
-        float Iq_aff = 0.0f;
-        if (controlMode == ANGLE) {
-            Iq_aff = K_aff * s_curve.getTargetA();
-        }
-        target_q_current = _constrain(Iq_pid + Iq_vff + Iq_aff, -MOTOR_CURRENT_LIMIT, MOTOR_CURRENT_LIMIT);
+        
+        // Feed Forward velocity and acceleration values
+        // float Iq_vff = 0.0f;
+        // float Iq_aff = 0.0f;
+`
+        target_q_current = _constrain(Iq_pid, -MOTOR_CURRENT_LIMIT, MOTOR_CURRENT_LIMIT);
     }
 
     // --- Current loop (innermost): target current -> Vd/Vq ---
@@ -228,9 +236,10 @@ void FOCController::setControlMode(ControlMode _controlMode) {
     controlMode = _controlMode;
 }
 
-void FOCController::setTargetAngle(float _target_angle) { 
-    float D = _target_angle - mechanical_angle;
-    s_curve.update_params(D);
+void FOCController::setTargetAngle(float next_checkpoint_angle) {
+    last_checkpoint_angle = mechanical_angle;
+    float D = next_checkpoint_angle - last_checkpoint_angle;
+    s_curve.updateParams(D);
 }
 
 

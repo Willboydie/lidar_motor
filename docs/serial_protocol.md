@@ -55,7 +55,7 @@ Unknown `cmd` values raise `FAULT_CMD_INVALID`.
 | Packet | Header | Size | Nominal rate | Constant |
 |--------|--------|------|--------------|----------|
 | Control | `0x55` | **27 bytes** | 500 Hz | `CONTROL_PACKET_PERIOD_US` = 2000 µs |
-| Status | `0xAA` | **52 bytes** | 10 Hz | `STATUS_PACKET_PERIOD_MS` = 100 ms |
+| Status | `0xAA` | **56 bytes** | 10 Hz | `STATUS_PACKET_PERIOD_MS` = 100 ms |
 
 No checksums in this revision. Distinguish packet types by header byte and fixed size.
 
@@ -176,7 +176,7 @@ CONTROL_STRUCT = struct.Struct("<BffHffff")  # 27 bytes
 
 ---
 
-## 7. Status packet (`0xAA`, 52 bytes)
+## 7. Status packet (`0xAA`, 56 bytes)
 
 Housekeeping and live tuning mirror (values from motor X; both motors share the same setpoints when changed over serial).
 
@@ -198,6 +198,7 @@ Housekeeping and live tuning mirror (values from motor X; both motors share the 
 | 40 | `float32` | `angle_lpf_tau` | [s] |
 | 44 | `float32` | `foc_voltage_lpf_tau` | [s] |
 | 48 | `float32` | `velocity_feed_forward` | [A·s/rad] |
+| 52 | `float32` | `acceleration_feed_forward` | [A·s²/rad] |
 
 **`control_mode`** (`StateMachine.hpp`):
 
@@ -209,7 +210,7 @@ Housekeeping and live tuning mirror (values from motor X; both motors share the 
 
 ```python
 STATUS_HEADER = 0xAA
-STATUS_STRUCT = struct.Struct("<BBBBffffffffffff")  # 52 bytes
+STATUS_STRUCT = struct.Struct("<BBBBfffffffffffff")  # 56 bytes
 ```
 
 ---
@@ -242,6 +243,7 @@ STATUS_STRUCT = struct.Struct("<BBBBffffffffffff")  # 52 bytes
 | `VELOCITY_LPF_TAU_SET_CMD` | `0b00010010` | `0x12` | sensor velocity LPF τ [s] |
 | `ANGLE_LPF_TAU_SET_CMD` | `0b00010011` | `0x13` | sensor angle LPF τ [s] |
 | `VELOCITY_FF_SET_CMD` | `0b10010010` | `0x92` | velocity feed-forward [A·s/rad] |
+| `ACCELERATION_FF_SET_CMD` | `0b10010011` | `0x93` | acceleration feed-forward [A·s²/rad] |
 
 ### 8.3 Scan path (onboard Lissajous / sinusoidal generator)
 
@@ -358,7 +360,7 @@ import struct
 import serial
 
 CONTROL = struct.Struct("<BffHffff")           # 27 B, header 0x55
-STATUS  = struct.Struct("<BBBBffffffffffff") # 52 B, header 0xAA
+STATUS  = struct.Struct("<BBBBfffffffffffff") # 56 B, header 0xAA
 
 def parse_stream(ser: serial.Serial):
     buf = bytearray()
@@ -399,7 +401,7 @@ def parse_stream(ser: serial.Serial):
 | Prior V1 doc | **43 B** `0x55` | included velocities + mechanical angles |
 | **Current** | **27 B** `0x55` | `target_x/y`, `distance`, `mechanical_x/y`, `associated_x/y` |
 
-Status packet remains **52 bytes** / `0xAA`.
+Status packet is **56 bytes** / `0xAA` (includes velocity + acceleration feed-forward).
 
 Hosts must key off **header + size**. Do not assume the old 43-byte control layout.
 

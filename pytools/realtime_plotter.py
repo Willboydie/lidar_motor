@@ -41,7 +41,7 @@ STATUS_HEADER = 0xAA
 DEBUG_HEADER = bytes((0xFF, 0x04, 0x06))
 DEBUG_HEADER_SIZE = len(DEBUG_HEADER)
 CONTROL_STRUCT = struct.Struct("<BffHffff")  # 27 B — matches Interface.hpp ControlPacket
-STATUS_STRUCT = struct.Struct("<BBBBffffffffffff")
+STATUS_STRUCT = struct.Struct("<BBBBfffffffffffff")  # 56 B — matches Interface.hpp StatusPacket
 CONTROL_SIZE = CONTROL_STRUCT.size
 STATUS_SIZE = STATUS_STRUCT.size
 
@@ -61,6 +61,7 @@ FOC_VOLTAGE_LPF_TAU_SET_CMD = 0x11
 VELOCITY_LPF_TAU_SET_CMD = 0x12
 ANGLE_LPF_TAU_SET_CMD = 0x13
 VELOCITY_FF_SET_CMD = 0x92
+ACCELERATION_FF_SET_CMD = 0x93
 
 DEFAULT_BAUD = 460800
 HISTORY_SAMPLES = 15000  # ~30 s at 500 Hz
@@ -107,14 +108,15 @@ TUNING_FIELDS = (
     ("angle_lpf_tau", ANGLE_LPF_TAU_SET_CMD),
     ("foc_voltage_lpf_tau", FOC_VOLTAGE_LPF_TAU_SET_CMD),
     ("velocity_feed_forward", VELOCITY_FF_SET_CMD),
+    ("acceleration_feed_forward", ACCELERATION_FF_SET_CMD),
 )
 
 STATUS_DEFAULTS = {name: 0.0 for name, _ in TUNING_FIELDS}
 STATUS_DEFAULTS.update(
     {
         "velocity_p": 1.0,
-        "angle_p": 1.0,
-        "angle_i": 0.5,
+        "angle_p": 10.0,
+        "angle_i": 3.0,
         "velocity_lpf_tau": 0.2,
     }
 )
@@ -537,6 +539,7 @@ class RealtimePlotter(QtWidgets.QMainWindow):
             "angle_lpf_tau": "Angle LPF τ [s]",
             "foc_voltage_lpf_tau": "FOC voltage LPF τ [s]",
             "velocity_feed_forward": "Velocity FF",
+            "acceleration_feed_forward": "Acceleration FF",
         }
         for field, cmd in TUNING_FIELDS:
             row = QtWidgets.QHBoxLayout()

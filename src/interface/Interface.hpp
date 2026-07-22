@@ -34,6 +34,7 @@
 #define FOC_VOLTAGE_LPF_TAU_SET_CMD 0b00010001
 
 #define VELOCITY_FF_SET_CMD 0b10010010
+#define ACCELERATION_FF_SET_CMD 0b10010011
 
 #define RECONFIGURE_LDM_CMD 0b00100000
 
@@ -87,6 +88,7 @@ struct StatusPacket {
     float angle_lpf_tau;
     float foc_voltage_lpf_tau;
     float velocity_feed_forward;
+    float acceleration_feed_forward;
 };
 #pragma pack(pop)
 
@@ -136,6 +138,7 @@ private:
     void handleAngleLPFTauSet(float data);
     void handleFOCVoltageLPFTauSet(float data);
     void handleVelocityFeedForwardSet(float data);
+    void handleAccelerationFeedForwardSet(float data);
     void handleReconfigureLDM(float data);
     void handleThetaPhaseIncSet(float data);
     void handlePhiPhaseIncSet(float data);

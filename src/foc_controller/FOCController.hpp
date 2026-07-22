@@ -25,7 +25,7 @@ constexpr uint32_t ANGLE_LOOP_DT_US    = 1000000UL / ANGLE_LOOP_HZ;
 
 class FOCController {
 public:
-    FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor);
+    FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor, SCurve& _s_curve);
     ~FOCController() { deinit(); }
     bool init();
     void deinit();
@@ -67,7 +67,9 @@ public:
     void setAngleD(float _angle_d) { PID_angle_controller.setD(_angle_d); }
     void setAngleRamp(float _angle_ramp) { PID_angle_controller.setRamp(_angle_ramp); }
     void setFOCVoltageLPFTau(float _foc_voltage_lpf_tau) { LPF_voltage.setTau(_foc_voltage_lpf_tau); }
+
     void setVelocityFeedForward(float gain) { K_vff = gain; }
+    void setAccelerationFeedForward(float gain) { K_aff = gain; }
 
     float getVelocityP() const { return PID_velocity_controller.P; }
     float getVelocityI() const { return PID_velocity_controller.I; }
@@ -78,7 +80,9 @@ public:
     float getAngleD() const { return PID_angle_controller.D; }
     float getAngleRamp() const { return PID_angle_controller.output_ramp; }
     float getFOCVoltageLPFTau() const { return LPF_voltage.getTau(); }
+
     float getVelocityFeedForward() const { return K_vff; }
+    float getAccelerationFeedForward() const { return K_aff; }
 
     // Inner current-loop PI gains (STM32G4 measured-current control; no-op path on
     // targets without current sensing). Exposed for live tuning in the L12 bench test.
@@ -109,6 +113,7 @@ public:
 private:
     Sensor& sensor;
     PWMDriver& pwm_driver;
+    SCurve& s_curve;
 
     // void setPhaseVoltage();
     float calculate_electrical_angle();
@@ -132,6 +137,10 @@ private:
     float target_velocity;
     float target_q_current;
     float target_d_current = 0.0f;  // set to zero while not current sensing
+    float approach_angle;
+    float approach_velocity;
+    float approach_acceleration;
+    float last_checkpoint_angle;
 
     // Cascade rate-gating timestamps [us].
     uint32_t last_current_us  = 0;
@@ -163,21 +172,22 @@ private:
     PIDControl PID_current_q{CURRENT_P, CURRENT_I, CURRENT_D, CURRENT_RAMP, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT};
     PIDControl PID_current_d{CURRENT_P, CURRENT_I, CURRENT_D, CURRENT_RAMP, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT};
 
-    SCurve s_curve(JERK_MAX, ACCEL_MAX, EPS);
-
     // Inline current sense (STM32G4). Null on targets without sensing -> voltage model.
     InlineCurrentSense* current_sense = nullptr;
 
+    // Voltage low pass filter
     _LowPassFilter LPF_voltage{FOC_VOLTAGE_LPF_TAU};
 
+    // Feedforward gains
     float K_vff = DEFAULT_VELOCITY_FEEDFORWARD_GAIN;   // A / (rad/s) - velocity feedforward gain
     float K_aff = DEFAULT_ACCELERATION_FEEDFORWARD_GAIN;   // A / (rad/s^2) - acceleration feedforward gain
   
+    // Housekeeping
     bool enabled = false;
     bool initialised = false;
     ControlMode controlMode = ANGLE;
 
-    // motor constants
+    // Motor constants
     const float motor_phase_resistance;
     const float motor_K_v;
     const float motor_K_e;

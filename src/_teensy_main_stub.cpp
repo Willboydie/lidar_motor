@@ -2,7 +2,7 @@
 //
 // Host protocol (docs/serial_protocol.md / UI/realtime_plotter.py):
 //   RX: 5-byte commands <Bf>  (TARGET_X/Y, enable, PID, …)
-//   TX: ControlPacket 0x55 @ 500 Hz (19 B) + StatusPacket 0xAA @ 10 Hz (52 B)
+//   TX: ControlPacket 0x55 @ 500 Hz (27 B) + StatusPacket 0xAA @ 10 Hz (56 B)
 //   Debug::msg framed as 0xFF 0x04 0x06 + text line
 //
 // Path setpoints are host-generated (TARGET_X_SET / TARGET_Y_SET). Onboard
@@ -55,8 +55,10 @@ PWMDriverTeensy41 pwmDriverX(N1_X, N2_X, N3_X, EN_X);
 PWMDriverTeensy41 pwmDriverY(N1_Y, N2_Y, N3_Y, EN_Y);
 GM2804 motorX(1, SENSOR_OFFSET_X);
 GM2804 motorY(2, SENSOR_OFFSET_Y);
-FOCController focControllerX(sensorX, pwmDriverX, motorX);
-FOCController focControllerY(sensorY, pwmDriverY, motorY);
+SCurve sCurveX(JERK_MAX, ACCEL_MAX);
+SCurve sCurveY(JERK_MAX, ACCEL_MAX);
+FOCController focControllerX(sensorX, pwmDriverX, motorX, sCurveX);
+FOCController focControllerY(sensorY, pwmDriverY, motorY, sCurveY);
 InlineCurrentSenseTeensy41 currentSenseX;
 InlineCurrentSenseTeensy41 currentSenseY;
 SinusoidalScanPath scanPath(THETA_INC, PHI_INC, THETA_AMPLITUDE, PHI_AMPLITUDE, THETA_CENTRE, PHI_CENTRE);
