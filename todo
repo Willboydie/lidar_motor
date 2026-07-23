@@ -1,4 +1,7 @@
-Implement a motor setpoint ring buffer system to facilitate smooth movement between points.
+Implement a LiDAR Scanner class with two modes: Path & Adaptive
+- Path mode uses the scan_path mode, upgraded to feed modelled velocity into the PID controllers
+    o Requires a cosine LUT
+- Adaptive uses a "buffer" with two slots to inhibit interruptions and poll for angle target hits.
 
 Experiment with a python host closed loop scanner
     1. Open loop coarse lissajous
