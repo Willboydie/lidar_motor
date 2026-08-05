@@ -16,7 +16,7 @@ public:
     // Interrupt-driven API
     void triggerMeasurement();                    // Start a new measurement
     bool isDataReady() { return dataReady; }      // Check if ready (non-blocking)
-    bool readDistance();                          // Read result (only call when ready)
+    void readDistance();                          // Read result (only call when ready)
     
     // returns the midpoint between the ready and trigger timestamps: our best estimate of the measurement timestamp
     // unsigned long getLatestTimestamp() { return (unsigned long)( (ready_timestamp + trigger_timestamp) / 2 ); }
@@ -33,9 +33,9 @@ protected:
     // unsigned long ready_timestamp;
     // unsigned long trigger_timestamp;
 
-    int MODE_PIN;
     int SCL;
     int SDA;
+    int MODE_PIN;
     bool enabled = false;
     bool initialised = false;
     void markInitialised() { initialised = true; }

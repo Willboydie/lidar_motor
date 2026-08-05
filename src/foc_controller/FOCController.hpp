@@ -14,7 +14,7 @@
 #include "../state_machine/StateMachine.hpp"
 #include "../fault_manager/FaultManager.hpp"
 #include "../debug/Debug.hpp"
-#include "../s_curve/SCurve.hpp"
+#include "../filter/MeanFilter.hpp"
 
 // Cascaded-loop periods [us], derived from the editable rates in tweakable_params.h.
 // loop() runs the whole cascade at (at most) the current-loop rate and gates the
@@ -25,14 +25,16 @@ constexpr uint32_t ANGLE_LOOP_DT_US    = 1000000UL / ANGLE_LOOP_HZ;
 
 class FOCController {
 public:
-    FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor, SCurve& _s_curve);
+    FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor);
     ~FOCController() { deinit(); }
     bool init();
     void deinit();
     void enable();
     void disable();
     void calibrate();
-    bool loop();
+    void angle_loop();
+    void velocity_loop();
+    void current_loop();
 
     float getAngularVelocity() { return angular_velocity; }
     float getMechanicalAngle() { return mechanical_angle; }
@@ -41,6 +43,7 @@ public:
         return normalise_angle(
             target_angle * motor_pole_pairs * motor_sensor_direction - motor_electrical_offset);
     }
+    float getRollingAngularError() { return rollingAngularError; }
     float getAngularError() { return angular_error; }
     float getVelocityError() { return velocity_error; }
     float getTargetAngle() { return target_angle; }
@@ -56,7 +59,7 @@ public:
     float getVc() { return Vc; }
 
     void setControlMode(ControlMode _controlMode);
-    void setTargetAngle(float _target_angle);
+    void setTargetAngle(float _target_angle) { target_angle = _target_angle; }
     void setTargetVelocity(float _target_velocity) { target_velocity = _target_velocity; }
     void setVelocityP(float _velocity_p) { PID_velocity_controller.setP(_velocity_p); }
     void setVelocityI(float _velocity_i) { PID_velocity_controller.setI(_velocity_i); }
@@ -70,6 +73,8 @@ public:
 
     void setVelocityFeedForward(float gain) { K_vff = gain; }
     void setAccelerationFeedForward(float gain) { K_aff = gain; }
+
+    void setApproachVelocity(float _approach_velocity) { approach_velocity = _approach_velocity; }
 
     float getVelocityP() const { return PID_velocity_controller.P; }
     float getVelocityI() const { return PID_velocity_controller.I; }
@@ -113,17 +118,15 @@ public:
 private:
     Sensor& sensor;
     PWMDriver& pwm_driver;
-    SCurve& s_curve;
 
-    // void setPhaseVoltage();
+    MeanFilter rollingMeanErrorFilter;
+    float rollingAngularError = 0.0f;
+
     float calculate_electrical_angle();
 
     // Innermost cascade stage. Compile-time selected: STM32G4 closes a measured-
     // current PI (Vd/Vq); other targets use the estimate_Vq voltage model.
     void currentLoop();
-
-    float calibrateLoopPeriod(uint16_t num_samples);
-    void setLoopPeriod();
     
     // state variables
     float angular_velocity;
@@ -165,8 +168,8 @@ private:
 
 
     // PID controllers
-    PIDControl PID_angle_controller{ANGLE_P, ANGLE_I, ANGLE_D, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT}; // angular error -> target velocity
-    PIDControl PID_velocity_controller{VELOCITY_P, VELOCITY_I, VELOCITY_D, VELOCITY_RAMP, CURRENT_LOWER_LIMIT, CURRENT_UPPER_LIMIT};  // velocity error -> target q current
+    PIDControl PID_angle_controller; // params set in constructor according to motor X vx Y
+    PIDControl PID_velocity_controller;  // velocity error -> target q current
     // Inner current PI: current error [A] -> phase voltage [V] (STM32G4). Output
     // limited to the voltage rail so anti-windup clamps the integral in volts.
     PIDControl PID_current_q{CURRENT_P, CURRENT_I, CURRENT_D, CURRENT_RAMP, -MOTOR_VOLTAGE_LIMIT, MOTOR_VOLTAGE_LIMIT};

@@ -45,7 +45,6 @@ void LDM::triggerMeasurement() {
     requestDistance();
 }
 
-bool LDM::readDistance() {
+void LDM::readDistance() {
     readLatestDistance();
-    return true;
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 enum ControlMode {
-    PATH,
     ANGLE,
     VELOCITY
 };
@@ -9,6 +8,5 @@ enum ControlMode {
 
 struct StateMachine {
     ControlMode controlMode = ANGLE;
-    bool scanning = false;
     bool enabled = false;
 };

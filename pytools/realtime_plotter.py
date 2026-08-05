@@ -1,16 +1,26 @@
 """
 Motor control realtime plotter — Qt dashboard for V1 serial telemetry.
 
-Parses ControlPacket (0x55 @ 500 Hz, 27 B), StatusPacket (0xAA @ 10 Hz), and framed
-Debug messages (0xFF 0x04 0x06 + newline-terminated text) per
-docs/serial_protocol.md / src/debug/Debug.hpp. Plots motor X/Y target vs
-mechanical angles over time (associated angles are parsed then ignored).
-The host computes sine-wave setpoints and streams them via TARGET_X_SET /
-TARGET_Y_SET (0x10 / 0x14). Firmware ScanPath is not used.
+Parses ControlPacket (0x55 @ CONTROL_PACKET_PERIOD_US, 27 B), StatusPacket
+(0xAA @ 10 Hz), and framed Debug messages (0xFF 0x04 0x06 + newline-terminated
+text) per docs/serial_protocol.md / src/debug/Debug.hpp.
 
-Flash the Teensy plotter stub first:
+Primary use with scan_engine_test: XY plot of FOC target angles
+(ControlPacket.target_angle_x vs target_angle_y) — last N samples at once.
+Mechanical trail is shown dashed when available; associated angles ignored.
+
+Host → device commands use framed payloads matching src/parser/Parser.hpp:
+    [cmd:1][len_lo:1][len_hi:1][payload: len bytes]
+Interface.onCommand enacts them (ScanEngine enable / coarse / P2P / tuning).
+See src/utils/cmd_defs.h.
+
+Flash the ScanEngine bench first:
     pio run -e teensy41 --target upload
-    # entry: src/_teensy_main_stub.cpp
+    # entry: src/_teensy_main_stub.cpp → tests/scan/scan_engine_test.hpp
+
+Typical flow to see targets move:
+    Connect → Scan Engine Enable → Coarse Begin
+    (System Enable is optional; scan_engine_test streams targets without FOC loops.)
 
 Usage:
     pip install PySide6 pyqtgraph pyserial
@@ -25,8 +35,6 @@ import sys
 import threading
 import time
 from collections import deque
-from itertools import islice
-from dataclasses import dataclass
 
 import numpy as np
 import pyqtgraph as pg
@@ -34,42 +42,46 @@ import serial
 import serial.tools.list_ports
 from PySide6 import QtCore, QtGui, QtWidgets
 
-# ---------- Protocol (mirrors Interface.hpp / Debug.hpp) ----------
+# ---------- Protocol (mirrors Interface.hpp / cmd_defs.h / Debug.hpp) ----------
 CONTROL_HEADER = 0x55
 STATUS_HEADER = 0xAA
 # Debug::msg — Serial.write(DEBUG_HEADER) then Serial.println(text)
 DEBUG_HEADER = bytes((0xFF, 0x04, 0x06))
 DEBUG_HEADER_SIZE = len(DEBUG_HEADER)
 CONTROL_STRUCT = struct.Struct("<BffHffff")  # 27 B — matches Interface.hpp ControlPacket
-STATUS_STRUCT = struct.Struct("<BBBBfffffffffffff")  # 56 B — matches Interface.hpp StatusPacket
+STATUS_STRUCT = struct.Struct("<BBBBBfffffffffffff")  # 57 B — matches Interface.hpp StatusPacket
 CONTROL_SIZE = CONTROL_STRUCT.size
 STATUS_SIZE = STATUS_STRUCT.size
 
 DISABLE_ENABLE_CMD = 0x01
-TOGGLE_CONTROL_MODE_CMD = 0x03
+SET_DEBUG_MODE_CMD = 0x02
 VELOCITY_P_SET_CMD = 0x08
 VELOCITY_I_SET_CMD = 0x09
-VELOCITY_D_SET_CMD = 0x0A
-VELOCITY_RAMP_SET_CMD = 0x0B
 ANGLE_P_SET_CMD = 0x0C
 ANGLE_I_SET_CMD = 0x0D
-ANGLE_D_SET_CMD = 0x0E
-ANGLE_RAMP_SET_CMD = 0x0F
-TARGET_X_SET_CMD = 0x10  # Interface.hpp TARGET_X_SET_CMD
-TARGET_Y_SET_CMD = 0x14  # Interface.hpp TARGET_Y_SET_CMD
-FOC_VOLTAGE_LPF_TAU_SET_CMD = 0x11
 VELOCITY_LPF_TAU_SET_CMD = 0x12
-ANGLE_LPF_TAU_SET_CMD = 0x13
-VELOCITY_FF_SET_CMD = 0x92
-ACCELERATION_FF_SET_CMD = 0x93
+
+# Scan Engine (src/utils/cmd_defs.h)
+ENABLE_SCANENGINE_CMD = 0x1D
+DISABLE_SCANENGINE_CMD = 0x1E
+BEGIN_COARSE_SCANNING_CMD = 0x1F
+X_AMPLITUDE_SET_CMD = 0x21
+Y_AMPLITUDE_SET_CMD = 0x22
+X_FREQUENCY_SET_CMD = 0x23
+Y_FREQUENCY_SET_CMD = 0x24
+X_PHASE_SET_CMD = 0x25
+Y_PHASE_SET_CMD = 0x26
+STOP_COARSE_SCANNING_CMD = 0x27
+BEGIN_POINT2POINT_SCANNING_CMD = 0x28
+STOP_POINT2POINT_SCANNING_CMD = 0x29
+SET_POINT2POINT_TARGET_CMD = 0x2A
+UPDATE_COARSE_SCAN_CENTRE_CMD = 0x2B
 
 DEFAULT_BAUD = 460800
-HISTORY_SAMPLES = 15000  # ~30 s at 500 Hz
+N_POINTS = 5 * 250  # points shown at once on the XY plot
+HISTORY_SAMPLES = N_POINTS
 TWO_PI = 2.0 * math.pi
-PATH_UPDATE_PERIOD_S = 0.1  # host sine step period (matches UI label)
-PLOT_INTERVAL_MS = 33  # ~30 Hz
-
-CONTROL_MODE_LABELS = {0: "PATH", 1: "ANGLE", 2: "VELOCITY"}
+PLOT_INTERVAL_MS = 33  # ~30 Hz UI refresh
 
 
 def normalize_angle(angle: float) -> float:
@@ -77,134 +89,70 @@ def normalize_angle(angle: float) -> float:
     a = math.fmod(angle, TWO_PI)
     return a if a >= 0.0 else (a + TWO_PI)
 
-ANGLE_CURVES = (
-    ("X target", 0, "#4da6ff", QtCore.Qt.PenStyle.SolidLine),
-    ("X mechanical", 2, "#4da6ff", QtCore.Qt.PenStyle.DashLine),
-    ("Y target", 1, "#ff9944", QtCore.Qt.PenStyle.SolidLine),
-    ("Y mechanical", 3, "#ff9944", QtCore.Qt.PenStyle.DashLine),
-)
-
 # ControlPacket unpack indices (header + fields):
 # 0 header, 1 target_x, 2 target_y, 3 distance,
 # 4 mechanical_x, 5 mechanical_y, 6 associated_x, 7 associated_y
-# Plotter uses targets + mechanical only; associated is parsed then ignored.
 _CONTROL_TARGET_X = 1
 _CONTROL_TARGET_Y = 2
 _CONTROL_MECH_X = 4
 _CONTROL_MECH_Y = 5
-_CONTROL_ASSOC_X = 6
-_CONTROL_ASSOC_Y = 7
 
 TUNING_FIELDS = (
     ("velocity_p", VELOCITY_P_SET_CMD),
     ("velocity_i", VELOCITY_I_SET_CMD),
-    ("velocity_d", VELOCITY_D_SET_CMD),
-    ("velocity_ramp", VELOCITY_RAMP_SET_CMD),
     ("angle_p", ANGLE_P_SET_CMD),
     ("angle_i", ANGLE_I_SET_CMD),
-    ("angle_d", ANGLE_D_SET_CMD),
-    ("angle_ramp", ANGLE_RAMP_SET_CMD),
     ("velocity_lpf_tau", VELOCITY_LPF_TAU_SET_CMD),
-    ("angle_lpf_tau", ANGLE_LPF_TAU_SET_CMD),
-    ("foc_voltage_lpf_tau", FOC_VOLTAGE_LPF_TAU_SET_CMD),
-    ("velocity_feed_forward", VELOCITY_FF_SET_CMD),
-    ("acceleration_feed_forward", ACCELERATION_FF_SET_CMD),
 )
 
 STATUS_DEFAULTS = {name: 0.0 for name, _ in TUNING_FIELDS}
 STATUS_DEFAULTS.update(
     {
         "velocity_p": 1.0,
-        "angle_p": 10.0,
-        "angle_i": 3.0,
+        "angle_p": 6.0,
+        "angle_i": 12.0,
         "velocity_lpf_tau": 0.2,
     }
 )
 
-
-@dataclass
-class SineWaveParams:
-    """y = a·π·(sin(b·x) + 1) + c; x advances by PATH_UPDATE_PERIOD_S each step."""
-
-    a: float = 0.5
-    b: float = 0.001
-    c: float = 0.02
-
-
-class HostSineWavePath:
-    """Host-side sine path: X is phase/time, Y follows the parametric equation."""
-
-    def __init__(self, params: SineWaveParams | None = None):
-        self._lock = threading.Lock()
-        self.params = params or SineWaveParams()
-        self.reset()
-
-    def reset(self) -> None:
-        with self._lock:
-            self._x = 0.0
-            self.theta = 0.0
-            self.phi = 0.0
-
-    def set_params(self, params: SineWaveParams) -> None:
-        with self._lock:
-            self.params = params
-
-    def step(self) -> tuple[float, float]:
-        with self._lock:
-            p = self.params
-            self._x += PATH_UPDATE_PERIOD_S
-            y = p.a * math.pi * (math.sin(p.b * self._x) + 1.0) + p.c
-            self.theta = normalize_angle(self._x)
-            self.phi = normalize_angle(y)
-            return self.theta, self.phi
-
-
-class PathStreamer(threading.Thread):
-    """Background thread that streams host path setpoints over serial."""
-
-    def __init__(self, path: HostSineWavePath, write_targets):
-        super().__init__(daemon=True, name="PathStreamer")
-        self.path = path
-        self.write_targets = write_targets
-        self._stop_event = threading.Event()
-        self._scanning = threading.Event()
-
-    def start_scanning(self) -> None:
-        self.path.reset()
-        self._scanning.set()
-
-    def stop_scanning(self) -> None:
-        self._scanning.clear()
-
-    def shutdown(self) -> None:
-        self._stop_event.set()
-        self._scanning.clear()
-
-    def run(self) -> None:
-        while not self._stop_event.is_set():
-            if self._scanning.is_set():
-                theta, phi = self.path.step()
-                self.write_targets(theta, phi)
-                if self._stop_event.wait(PATH_UPDATE_PERIOD_S):
-                    break
-            elif self._stop_event.wait(0.05):
-                break
+COARSE_PARAM_FIELDS = (
+    ("x_amplitude", X_AMPLITUDE_SET_CMD, 0.2),
+    ("y_amplitude", Y_AMPLITUDE_SET_CMD, 0.2),
+    ("x_frequency", X_FREQUENCY_SET_CMD, 1.5),
+    ("y_frequency", Y_FREQUENCY_SET_CMD, 3.0),
+    ("x_phase", X_PHASE_SET_CMD, 0.0),
+    ("y_phase", Y_PHASE_SET_CMD, 0.0),
+)
 
 
 class AngleHistory:
-    def __init__(self):
+    def __init__(self, maxlen: int = HISTORY_SAMPLES):
         self.lock = threading.Lock()
-        self.times = deque(maxlen=HISTORY_SAMPLES)
-        self.samples = deque(maxlen=HISTORY_SAMPLES)
+        self.maxlen = maxlen
+        self.target_xy = deque(maxlen=maxlen)  # (angle_x, angle_y)
+        self.mech_xy = deque(maxlen=maxlen)
         self.control_count = 0
 
-    def append(self, timestamp: float, packet: tuple) -> None:
+    def set_maxlen(self, n: int) -> None:
+        n = max(1, int(n))
         with self.lock:
-            self.times.append(timestamp)
-            self.samples.append(
+            if n == self.maxlen:
+                return
+            self.maxlen = n
+            self.target_xy = deque(self.target_xy, maxlen=n)
+            self.mech_xy = deque(self.mech_xy, maxlen=n)
+
+    def append(self, timestamp: float, packet: tuple) -> None:
+        del timestamp  # XY trail is sample-count based, not time-windowed
+        with self.lock:
+            self.target_xy.append(
                 (
                     normalize_angle(float(packet[_CONTROL_TARGET_X])),
                     normalize_angle(float(packet[_CONTROL_TARGET_Y])),
+                )
+            )
+            self.mech_xy.append(
+                (
                     normalize_angle(float(packet[_CONTROL_MECH_X])),
                     normalize_angle(float(packet[_CONTROL_MECH_Y])),
                 )
@@ -213,38 +161,18 @@ class AngleHistory:
 
     def clear(self) -> None:
         with self.lock:
-            self.times.clear()
-            self.samples.clear()
+            self.target_xy.clear()
+            self.mech_xy.clear()
 
-    def snapshot(self, now: float, window: float) -> tuple[np.ndarray, list[np.ndarray]]:
-        """Copy only samples within the visible time window (relative to now)."""
-        cutoff = now - window
+    def snapshot(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Return last N points as (target_x, target_y, mech_x, mech_y)."""
         with self.lock:
-            n = len(self.times)
-            if n == 0:
-                return np.empty(0, dtype=np.float64), []
-
-            start = n
-            for i, ts in enumerate(self.times):
-                if ts >= cutoff:
-                    start = i
-                    break
-
-            count = n - start
-            if count == 0:
-                return np.empty(0, dtype=np.float64), []
-
-            rel_t = np.fromiter(
-                (ts - now for ts in islice(self.times, start, None)),
-                dtype=np.float64,
-                count=count,
-            )
-            rows = list(islice(self.samples, start, None))
-
-        arr = np.asarray(rows, dtype=np.float64)
-        if arr.ndim == 1:
-            arr = arr.reshape(1, -1)
-        return rel_t, [arr[:, col] for _, col, _, _ in ANGLE_CURVES]
+            if not self.target_xy:
+                empty = np.empty(0, dtype=np.float64)
+                return empty, empty, empty, empty
+            target = np.asarray(self.target_xy, dtype=np.float64)
+            mech = np.asarray(self.mech_xy, dtype=np.float64)
+        return target[:, 0], target[:, 1], mech[:, 0], mech[:, 1]
 
 
 class SerialReader(threading.Thread):
@@ -268,12 +196,15 @@ class SerialReader(threading.Thread):
     def stop(self) -> None:
         self._stop_event.set()
 
-    def write_command(self, cmd: int, value: float = 0.0) -> None:
+    def write_command(self, cmd: int, *values: float) -> None:
+        """Send [cmd][len_lo][len_hi][payload floats…] — matches Parser framing."""
         ser = self._serial
         if ser is not None and ser.is_open:
             try:
+                payload = b"".join(struct.pack("<f", float(v)) for v in values)
+                frame = struct.pack("<BH", cmd & 0xFF, len(payload)) + payload
                 with self._write_lock:
-                    ser.write(struct.pack("<Bf", cmd, float(value)))
+                    ser.write(frame)
             except serial.SerialException:
                 pass
 
@@ -399,10 +330,10 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
         self.reader: SerialReader | None = None
         self.history = AngleHistory()
-        self.path = HostSineWavePath()
         self._tuning_values = dict(STATUS_DEFAULTS)
         self.paused = False
         self._enabled = False
+        self._debug = True  # matches DEFAULT_DEBUG_SETTING
         self._scanning = False
         self._control_mode = 1
         self._rate_last_time = time.monotonic()
@@ -414,7 +345,7 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.status_received.connect(self._on_status_ui)
 
         self._tuning_spins: dict[str, QtWidgets.QDoubleSpinBox] = {}
-        self._path_spins: dict[str, QtWidgets.QWidget] = {}
+        self._coarse_spins: dict[str, QtWidgets.QDoubleSpinBox] = {}
 
         self._build_ui()
 
@@ -426,9 +357,6 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.rate_timer.timeout.connect(self._update_rate)
         self.rate_timer.start(1000)
 
-        self.path_streamer = PathStreamer(self.path, self._write_targets)
-        self.path_streamer.start()
-
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
@@ -437,7 +365,7 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setMaximumWidth(380)
+        scroll.setMaximumWidth(500)
         panel_widget = QtWidgets.QWidget()
         panel = QtWidgets.QVBoxLayout(panel_widget)
         panel.setSpacing(8)
@@ -469,110 +397,144 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.enable_btn = QtWidgets.QPushButton("Enable")
         self.enable_btn.clicked.connect(self._send_enable_toggle)
         self._style_enable_btn()
-        self.mode_label = QtWidgets.QLabel("Mode: —")
-        self.mode_btn = QtWidgets.QPushButton("Toggle Control Mode")
-        self.mode_btn.clicked.connect(lambda: self._send_cmd(TOGGLE_CONTROL_MODE_CMD))
+        self.debug_btn = QtWidgets.QPushButton("Debug")
+        self.debug_btn.clicked.connect(self._send_debug_toggle)
+        self._style_debug_btn()
         state_layout.addWidget(self.enable_btn)
-        state_layout.addWidget(self.mode_label)
-        state_layout.addWidget(self.mode_btn)
+        state_layout.addWidget(self.debug_btn)
         panel.addWidget(state)
 
-        manual_box = QtWidgets.QGroupBox("Manual targets")
-        manual_layout = QtWidgets.QFormLayout(manual_box)
-        self.manual_x_spin = QtWidgets.QDoubleSpinBox()
-        self.manual_x_spin.setDecimals(6)
-        self.manual_x_spin.setRange(-10.0, 10.0)
-        self.manual_x_spin.setValue(0.0)
-        self.manual_y_spin = QtWidgets.QDoubleSpinBox()
-        self.manual_y_spin.setDecimals(6)
-        self.manual_y_spin.setRange(-10.0, 10.0)
-        self.manual_y_spin.setValue(0.0)
-        manual_layout.addRow("X target [rad]:", self.manual_x_spin)
-        manual_layout.addRow("Y target [rad]:", self.manual_y_spin)
-        set_targets_btn = QtWidgets.QPushButton("Set targets")
-        set_targets_btn.clicked.connect(self._send_manual_targets)
-        manual_layout.addRow(set_targets_btn)
-        manual_note = QtWidgets.QLabel("Sending manual targets stops scanning.")
-        manual_note.setWordWrap(True)
-        manual_note.setStyleSheet("color: #888;")
-        manual_layout.addRow(manual_note)
-        panel.addWidget(manual_box)
-
-        path_box = QtWidgets.QGroupBox("Sine wave path (host-generated)")
-        path_layout = QtWidgets.QFormLayout(path_box)
-        path_note = QtWidgets.QLabel(
-            "y = a·π·(sin(b·x) + 1) + c; x advances each "
-            f"{PATH_UPDATE_PERIOD_S:.1f} s. "
-            "X target = x, Y target = y (both normalised to [0, 2π)). "
-            "Setpoints are sent as TARGET_X/Y (0x10/0x14)."
+        scan_box = QtWidgets.QGroupBox("Scan Engine")
+        scan_layout = QtWidgets.QVBoxLayout(scan_box)
+        engine_row = QtWidgets.QHBoxLayout()
+        enable_engine_btn = QtWidgets.QPushButton("Enable")
+        enable_engine_btn.clicked.connect(
+            lambda: self._send_cmd(ENABLE_SCANENGINE_CMD)
         )
-        path_note.setWordWrap(True)
-        path_note.setStyleSheet("color: #888;")
-        path_layout.addRow(path_note)
-
-        self.scan_btn = QtWidgets.QPushButton("Not scanning")
-        self.scan_btn.clicked.connect(self._toggle_scanning)
-        self._style_scan_btn()
-        path_layout.addRow(self.scan_btn)
-
-        self._add_path_spin(path_layout, "a", "a")
-        self._add_path_spin(path_layout, "b", "b")
-        self._add_path_spin(path_layout, "c [rad]", "c")
-        path_layout.addRow(
-            "Update period:",
-            QtWidgets.QLabel(f"{PATH_UPDATE_PERIOD_S:.1f} s"),
+        disable_engine_btn = QtWidgets.QPushButton("Disable")
+        disable_engine_btn.clicked.connect(
+            lambda: self._send_cmd(DISABLE_SCANENGINE_CMD)
         )
-        panel.addWidget(path_box)
+        engine_row.addWidget(enable_engine_btn)
+        engine_row.addWidget(disable_engine_btn)
+        scan_layout.addLayout(engine_row)
+
+        coarse_box = QtWidgets.QGroupBox("Coarse scan")
+        coarse_layout = QtWidgets.QFormLayout(coarse_box)
+        coarse_btns = QtWidgets.QHBoxLayout()
+        begin_coarse_btn = QtWidgets.QPushButton("Begin")
+        begin_coarse_btn.clicked.connect(
+            lambda: self._send_cmd(BEGIN_COARSE_SCANNING_CMD)
+        )
+        stop_coarse_btn = QtWidgets.QPushButton("Stop")
+        stop_coarse_btn.clicked.connect(
+            lambda: self._send_cmd(STOP_COARSE_SCANNING_CMD)
+        )
+        coarse_btns.addWidget(begin_coarse_btn)
+        coarse_btns.addWidget(stop_coarse_btn)
+        coarse_layout.addRow(coarse_btns)
+
+        labels = {
+            "x_amplitude": "X amplitude [rad]",
+            "y_amplitude": "Y amplitude [rad]",
+            "x_frequency": "X frequency [Hz]",
+            "y_frequency": "Y frequency [Hz]",
+            "x_phase": "X phase [rad]",
+            "y_phase": "Y phase [rad]",
+        }
+        for field, cmd, default in COARSE_PARAM_FIELDS:
+            self._add_set_spin(coarse_layout, labels[field], field, cmd, default, self._coarse_spins)
+
+        self.centre_x_spin = QtWidgets.QDoubleSpinBox()
+        self.centre_x_spin.setDecimals(6)
+        self.centre_x_spin.setRange(-10.0, 10.0)
+        self.centre_x_spin.setValue(3.54)
+        self.centre_y_spin = QtWidgets.QDoubleSpinBox()
+        self.centre_y_spin.setDecimals(6)
+        self.centre_y_spin.setRange(-10.0, 10.0)
+        self.centre_y_spin.setValue(3.39)
+        centre_row = QtWidgets.QHBoxLayout()
+        centre_row.addWidget(self.centre_x_spin)
+        centre_row.addWidget(self.centre_y_spin)
+        centre_btn = QtWidgets.QPushButton("Set")
+        centre_btn.setFixedWidth(48)
+        centre_btn.clicked.connect(self._send_coarse_centre)
+        centre_row.addWidget(centre_btn)
+        centre_wrap = QtWidgets.QWidget()
+        centre_wrap.setLayout(centre_row)
+        coarse_layout.addRow("Centre X/Y [rad]:", centre_wrap)
+        scan_layout.addWidget(coarse_box)
+
+        p2p_box = QtWidgets.QGroupBox("Point-to-point")
+        p2p_layout = QtWidgets.QFormLayout(p2p_box)
+        p2p_btns = QtWidgets.QHBoxLayout()
+        begin_p2p_btn = QtWidgets.QPushButton("Begin")
+        begin_p2p_btn.clicked.connect(
+            lambda: self._send_cmd(BEGIN_POINT2POINT_SCANNING_CMD)
+        )
+        stop_p2p_btn = QtWidgets.QPushButton("Stop")
+        stop_p2p_btn.clicked.connect(
+            lambda: self._send_cmd(STOP_POINT2POINT_SCANNING_CMD)
+        )
+        p2p_btns.addWidget(begin_p2p_btn)
+        p2p_btns.addWidget(stop_p2p_btn)
+        p2p_layout.addRow(p2p_btns)
+
+        self.p2p_x_spin = QtWidgets.QDoubleSpinBox()
+        self.p2p_x_spin.setDecimals(6)
+        self.p2p_x_spin.setRange(-10.0, 10.0)
+        self.p2p_x_spin.setValue(3.54)
+        self.p2p_y_spin = QtWidgets.QDoubleSpinBox()
+        self.p2p_y_spin.setDecimals(6)
+        self.p2p_y_spin.setRange(-10.0, 10.0)
+        self.p2p_y_spin.setValue(3.39)
+        p2p_row = QtWidgets.QHBoxLayout()
+        p2p_row.addWidget(self.p2p_x_spin)
+        p2p_row.addWidget(self.p2p_y_spin)
+        p2p_set_btn = QtWidgets.QPushButton("Set")
+        p2p_set_btn.setFixedWidth(48)
+        p2p_set_btn.clicked.connect(self._send_p2p_target)
+        p2p_row.addWidget(p2p_set_btn)
+        p2p_wrap = QtWidgets.QWidget()
+        p2p_wrap.setLayout(p2p_row)
+        p2p_layout.addRow("Target X/Y [rad]:", p2p_wrap)
+        scan_layout.addWidget(p2p_box)
+        panel.addWidget(scan_box)
 
         tuning_box = QtWidgets.QGroupBox("Tuning")
         tuning_layout = QtWidgets.QFormLayout(tuning_box)
-        labels = {
+        tuning_labels = {
             "velocity_p": "Velocity P",
             "velocity_i": "Velocity I",
-            "velocity_d": "Velocity D",
-            "velocity_ramp": "Velocity ramp",
             "angle_p": "Angle P",
             "angle_i": "Angle I",
-            "angle_d": "Angle D",
-            "angle_ramp": "Angle ramp",
             "velocity_lpf_tau": "Velocity LPF τ [s]",
-            "angle_lpf_tau": "Angle LPF τ [s]",
-            "foc_voltage_lpf_tau": "FOC voltage LPF τ [s]",
-            "velocity_feed_forward": "Velocity FF",
-            "acceleration_feed_forward": "Acceleration FF",
         }
         for field, cmd in TUNING_FIELDS:
-            row = QtWidgets.QHBoxLayout()
-            spin = QtWidgets.QDoubleSpinBox()
-            spin.setDecimals(6)
-            spin.setRange(-1e6, 1e6)
-            spin.setValue(self._tuning_values[field])
-            btn = QtWidgets.QPushButton("Set")
-            btn.setFixedWidth(48)
-            btn.clicked.connect(
-                lambda _=False, f=field, c=cmd, s=spin: self._send_tuning(f, c, s)
+            self._add_set_spin(
+                tuning_layout,
+                tuning_labels[field],
+                field,
+                cmd,
+                self._tuning_values[field],
+                self._tuning_spins,
             )
-            row.addWidget(spin, 1)
-            row.addWidget(btn)
-            wrap = QtWidgets.QWidget()
-            wrap.setLayout(row)
-            tuning_layout.addRow(labels[field] + ":", wrap)
-            self._tuning_spins[field] = spin
         panel.addWidget(tuning_box)
 
         disp = QtWidgets.QGroupBox("Display")
         disp_layout = QtWidgets.QGridLayout(disp)
-        self.window_spin = QtWidgets.QDoubleSpinBox()
-        self.window_spin.setRange(0.5, 120.0)
-        self.window_spin.setValue(10.0)
-        self.window_spin.setSingleStep(1.0)
+        self.n_points_spin = QtWidgets.QSpinBox()
+        self.n_points_spin.setRange(10, 100000)
+        self.n_points_spin.setValue(N_POINTS)
+        self.n_points_spin.setSingleStep(1000)
+        self.n_points_spin.valueChanged.connect(self.history.set_maxlen)
         self.pause_btn = QtWidgets.QPushButton("Pause")
         self.pause_btn.setCheckable(True)
         self.pause_btn.toggled.connect(self._toggle_pause)
         clear_btn = QtWidgets.QPushButton("Clear")
         clear_btn.clicked.connect(self.history.clear)
-        disp_layout.addWidget(QtWidgets.QLabel("Window [s]:"), 0, 0)
-        disp_layout.addWidget(self.window_spin, 0, 1)
+        disp_layout.addWidget(QtWidgets.QLabel("N points:"), 0, 0)
+        disp_layout.addWidget(self.n_points_spin, 0, 1)
         disp_layout.addWidget(self.pause_btn, 1, 0)
         disp_layout.addWidget(clear_btn, 1, 1)
         panel.addWidget(disp)
@@ -588,14 +550,22 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground("#101014")
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
-        self.plot_widget.setLabel("bottom", "time", units="s")
-        self.plot_widget.setLabel("left", "angle", units="rad")
-        self.plot_widget.setYRange(0.0, TWO_PI, padding=0.02)
+        self.plot_widget.setLabel("bottom", "angle X", units="rad")
+        self.plot_widget.setLabel("left", "angle Y", units="rad")
+        self.plot_widget.setAspectLocked(True)
         self.plot_widget.addLegend(offset=(10, 10))
-        self.curves = []
-        for label, _, colour, style in ANGLE_CURVES:
-            pen = pg.mkPen(colour, width=1.5, style=style)
-            self.curves.append(self.plot_widget.plot([], [], pen=pen, name=label))
+        self.target_curve = self.plot_widget.plot(
+            [],
+            [],
+            pen=pg.mkPen("#4da6ff", width=1.5),
+            name="FOC target",
+        )
+        self.mech_curve = self.plot_widget.plot(
+            [],
+            [],
+            pen=pg.mkPen("#ff9944", width=1.0, style=QtCore.Qt.PenStyle.DashLine),
+            name="mechanical",
+        )
         right.addWidget(self.plot_widget, 1)
 
         self.log_box = QtWidgets.QPlainTextEdit()
@@ -609,84 +579,46 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         right.addWidget(self.log_box, 0)
 
         self._refresh_ports()
-        self._apply_path_params()
-        self._update_mode_label()
 
-    def _add_path_spin(
+    def _add_set_spin(
         self,
         layout: QtWidgets.QFormLayout,
         label: str,
-        key: str,
+        field: str,
+        cmd: int,
+        default: float,
+        store: dict[str, QtWidgets.QDoubleSpinBox],
     ) -> None:
-        defaults = SineWaveParams()
         spin = QtWidgets.QDoubleSpinBox()
         spin.setDecimals(6)
-        spin.setRange(-100.0, 100.0)
-        spin.setValue(float(getattr(defaults, key)))
+        spin.setRange(-1e6, 1e6)
+        spin.setValue(float(default))
         row = QtWidgets.QHBoxLayout()
         row.addWidget(spin, 1)
-        apply_btn = QtWidgets.QPushButton("Set")
-        apply_btn.setFixedWidth(48)
-        apply_btn.clicked.connect(self._apply_path_params)
-        row.addWidget(apply_btn)
+        btn = QtWidgets.QPushButton("Set")
+        btn.setFixedWidth(48)
+        btn.clicked.connect(
+            lambda _=False, f=field, c=cmd, s=spin: self._send_tuning(f, c, s)
+        )
+        row.addWidget(btn)
         wrap = QtWidgets.QWidget()
         wrap.setLayout(row)
         layout.addRow(label + ":", wrap)
-        self._path_spins[key] = spin
+        store[field] = spin
 
-    def _read_path_params(self) -> SineWaveParams:
-        return SineWaveParams(
-            a=float(self._path_spins["a"].value()),
-            b=float(self._path_spins["b"].value()),
-            c=float(self._path_spins["c"].value()),
+    def _send_coarse_centre(self) -> None:
+        self._send_cmd(
+            UPDATE_COARSE_SCAN_CENTRE_CMD,
+            self.centre_x_spin.value(),
+            self.centre_y_spin.value(),
         )
 
-    def _apply_path_params(self) -> None:
-        self.path.set_params(self._read_path_params())
-
-    def _style_scan_btn(self) -> None:
-        if self._scanning:
-            self.scan_btn.setText("Scanning — click to stop")
-            self.scan_btn.setStyleSheet(
-                "background-color: #1f4f6b; color: white; font-weight: bold;"
-            )
-        else:
-            self.scan_btn.setText("Not scanning — click to start")
-            self.scan_btn.setStyleSheet(
-                "background-color: #3a3a3a; color: #cccccc;"
-            )
-
-    def _set_scanning(self, scanning: bool) -> None:
-        if scanning == self._scanning:
-            return
-        self._scanning = scanning
-        if scanning:
-            self._apply_path_params()
-            self.path_streamer.start_scanning()
-        else:
-            self.path_streamer.stop_scanning()
-        self._style_scan_btn()
-        self._update_mode_label()
-
-    def _stop_scanning(self) -> None:
-        self._set_scanning(False)
-
-    def _toggle_scanning(self) -> None:
-        self._set_scanning(not self._scanning)
-
-    def _send_manual_targets(self) -> None:
-        self._stop_scanning()
-        theta = normalize_angle(self.manual_x_spin.value())
-        phi = normalize_angle(self.manual_y_spin.value())
-        self._send_cmd(TARGET_X_SET_CMD, theta)
-        self._send_cmd(TARGET_Y_SET_CMD, phi)
-
-    def _write_targets(self, theta: float, phi: float) -> None:
-        reader = self.reader
-        if reader is None:
-            return
-        reader.write_command(TARGET_X_SET_CMD, theta)
-        reader.write_command(TARGET_Y_SET_CMD, phi)
+    def _send_p2p_target(self) -> None:
+        self._send_cmd(
+            SET_POINT2POINT_TARGET_CMD,
+            self.p2p_x_spin.value(),
+            self.p2p_y_spin.value(),
+        )
 
     def _refresh_ports(self) -> None:
         current = self.port_combo.currentText()
@@ -725,7 +657,6 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self._append_log(f"Connected to {port} @ {baud}")
 
     def _disconnect(self) -> None:
-        self._stop_scanning()
         if self.reader is not None:
             self.reader.stop()
             self.reader.join(timeout=1.0)
@@ -739,11 +670,11 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self._append_log(message)
         self._disconnect()
 
-    def _send_cmd(self, cmd: int, value: float = 0.0) -> None:
+    def _send_cmd(self, cmd: int, *values: float) -> None:
         if self.reader is None:
             self._append_log("Not connected")
             return
-        self.reader.write_command(cmd, value)
+        self.reader.write_command(cmd, *values)
 
     def _send_tuning(
         self, field: str, cmd: int, spin: QtWidgets.QDoubleSpinBox
@@ -754,7 +685,9 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
     def _send_enable_toggle(self) -> None:
         self._send_cmd(DISABLE_ENABLE_CMD)
-        print("ENABLE CMD SENT")
+
+    def _send_debug_toggle(self) -> None:
+        self._send_cmd(SET_DEBUG_MODE_CMD)
 
     def _style_enable_btn(self) -> None:
         if self._enabled:
@@ -768,25 +701,34 @@ class RealtimePlotter(QtWidgets.QMainWindow):
                 "background-color: #6b1f1f; color: white; font-weight: bold;"
             )
 
+    def _style_debug_btn(self) -> None:
+        if self._debug:
+            self.debug_btn.setText("Debug on — click to disable")
+            self.debug_btn.setStyleSheet(
+                "background-color: #1f6b3a; color: white; font-weight: bold;"
+            )
+        else:
+            self.debug_btn.setText("Debug off — click to enable")
+            self.debug_btn.setStyleSheet(
+                "background-color: #6b1f1f; color: white; font-weight: bold;"
+            )
+
     def _on_control_thread(self, timestamp: float, packet: tuple) -> None:
         self.history.append(timestamp, packet)
 
     def _on_status_thread(self, packet: tuple) -> None:
         self.status_received.emit(packet)
 
-    def _update_mode_label(self) -> None:
-        mode_name = CONTROL_MODE_LABELS.get(self._control_mode, str(self._control_mode))
-        scan_state = "scanning" if self._scanning else "not scanning"
-        self.mode_label.setText(f"Mode: {mode_name} · {scan_state}")
-
     def _on_status_ui(self, packet: tuple) -> None:
         enabled = bool(packet[1])
-        control_mode = int(packet[2])
         if enabled != self._enabled:
             self._enabled = enabled
             self._style_enable_btn()
-        self._control_mode = control_mode
-        self._update_mode_label()
+        debug = bool(packet[4])
+        if debug != self._debug:
+            self._debug = debug
+            self._style_debug_btn()
+
 
     def _toggle_pause(self, checked: bool) -> None:
         self.paused = checked
@@ -795,14 +737,11 @@ class RealtimePlotter(QtWidgets.QMainWindow):
     def _update_plot(self) -> None:
         if self.paused:
             return
-        now = time.monotonic()
-        window = self.window_spin.value()
-        rel_t, channels = self.history.snapshot(now, window)
-        if rel_t.size == 0:
+        tx, ty, mx, my = self.history.snapshot()
+        if tx.size == 0:
             return
-        for curve, ch in zip(self.curves, channels):
-            curve.setData(rel_t, ch)
-        self.plot_widget.setXRange(-window, 0, padding=0)
+        self.target_curve.setData(tx, ty)
+        self.mech_curve.setData(mx, my)
 
     def _update_rate(self) -> None:
         now = time.monotonic()
@@ -833,8 +772,6 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self._disconnect()
-        self.path_streamer.shutdown()
-        self.path_streamer.join(timeout=1.0)
         super().closeEvent(event)
 
 

@@ -1,7 +1,12 @@
 #include "PWMDriver.hpp"
 
-// init hardware pins
 bool PWMDriver::init() {
+  if (!generic_init()) return false;
+  return true;
+}
+
+// init hardware pins
+bool PWMDriver::generic_init() {
   if (initialised) return true;
 
   // PWM pins

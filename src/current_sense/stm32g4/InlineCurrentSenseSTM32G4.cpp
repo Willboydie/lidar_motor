@@ -491,6 +491,10 @@ void InlineCurrentSenseSTM32G4::_stopDmaConversions() {
     _unregisterDmaOwner(this, &hdma);
     dma_running_ = false;
 }
+bool InlineCurrentSenseSTM32G4::init() {
+    return init(true, false);
+}
+
 bool InlineCurrentSenseSTM32G4::init(bool hardware_trigger, bool defer_dma_start) {
     PinName pn_a = analogInputToPinName(pinA);
     PinName pn_b = analogInputToPinName(pinB);

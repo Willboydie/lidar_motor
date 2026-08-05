@@ -14,6 +14,14 @@ public:
     void calculateMedianAverage();
     float getAssociatedAngle() const { return median_average; }
 
+    // float lastNAverage(int N) const { 
+    //     float sum = 0.0f;
+    //     for (int i= 0; i < N; i++) {
+    //         sum += angles[i];
+    //     }
+    //     return sum / static_cast<float>(N);
+    // }
+
 private:
     void reset();
 

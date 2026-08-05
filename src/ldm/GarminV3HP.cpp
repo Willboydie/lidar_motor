@@ -43,10 +43,10 @@ void GarminV3HP::init() {
   for interrupt-driven operation. MODE pin goes LOW when busy, HIGH when ready.
 ------------------------------------------------------------------------------*/
 void GarminV3HP::configure() {
-    uint8_t sigCountMax;
-    uint8_t acqConfigReg;
-    uint8_t refCountMax;
-    uint8_t thresholdBypass;
+    uint8_t sigCountMax = 0x00;
+    uint8_t acqConfigReg = 0x00;
+    uint8_t refCountMax = 0x00;
+    uint8_t thresholdBypass = 0x00;
 
     switch (config_number) {
         case 0: // Default mode, balanced performance

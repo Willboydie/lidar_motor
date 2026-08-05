@@ -89,18 +89,14 @@
 #define BIT_RESOLUTION 14
 #define CPR (1 << BIT_RESOLUTION) // 14 bit resolution
 
-
 // Calibration
 #define ALIGNMENT_VOLTAGE 3.0f // V
-#define WORLD_OFFSET_X 5.28f
-#define WORLD_OFFSET_Y 2.11f
 
 // PWM Driver
 // NB: stm32duino's pins_arduino.h defines PWM_FREQUENCY=1000 (default for
 // analogWrite). Prefix our project's macro to avoid that collision.
 #define MOTOR_PWM_FREQUENCY 25000 // 25khz
 #define MOTOR_PWM_FREQUENCY_MAX 50000 // 50khz
-
 
 // Angle Tracking
 #define ANGLE_TRACKING_LIMIT 5000
@@ -113,7 +109,7 @@
 #define BAUD_RATE 460800
 
 // Debug
-#define DEFAULT_DEBUG_SETTING true
+#define DEFAULT_DEBUG_SETTING false
 
 // EXACT VALUES
 #define _2_SQRT3 1.15470053838f

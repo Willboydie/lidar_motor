@@ -14,8 +14,8 @@ public:
     en = _en;
   }
   virtual ~PWMDriver() { deinit(); }
-    
-  bool init();
+  
+  virtual bool init();
   void deinit();
   void disable();
   void enable();
@@ -26,6 +26,7 @@ public:
   bool isEnabled() { return enabled; }
 
 protected:
+  bool generic_init();
   int n1;
   int n2;
   int n3;

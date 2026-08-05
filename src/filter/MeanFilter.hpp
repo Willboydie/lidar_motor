@@ -14,13 +14,13 @@ public:
     float operator()(float reading);
 
 protected:
-    static constexpr uint16_t window_size = FILTER_WINDOW_SIZE;
+    const uint16_t window_size = MEAN_FILTER_WINDOW_SIZE;
     uint16_t head = 0;
 
     int32_t int_sum = 0;
-    int32_t int_buffer[window_size] = {0};  // Instance-specific buffer, initialized to zeros
+    int32_t int_buffer[MEAN_FILTER_WINDOW_SIZE] = {0};  // Instance-specific buffer, initialized to zeros
     
     float float_sum = 0.0f;
-    float float_buffer[window_size] = {0.0f};
-    static constexpr float one_over_window_size = 1.0f / static_cast<float>(window_size);
+    float float_buffer[MEAN_FILTER_WINDOW_SIZE] = {0.0f};
+    const float one_over_window_size = 1.0f / static_cast<float>(MEAN_FILTER_WINDOW_SIZE);
 };

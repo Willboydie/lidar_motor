@@ -2,11 +2,11 @@
 #if defined(STM32G4xx)
 
 #include <Arduino.h>
-// L0 — MCU & toolchain (alive + loop timing + heartbeat).
-#include "tests/mcu/mcu_l0_test.hpp"
+// L2 — Motor phase windings (ohmmeter + phase-pair detent, X then Y).
+#include "tests/windings/windings_l2_test.hpp"
 
 void setup() {
-    mcu_l0_test();
+    windings_l2_test();
 }
 
 void loop() {}

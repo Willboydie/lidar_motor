@@ -18,6 +18,10 @@ public:
         memset(histogram, 0, sizeof(histogram));
     }
 
+    float operator()(uint16_t new_val) {
+        return operator()(static_cast<int32_t>(new_val));
+    }
+
     float operator()(int32_t new_val) {
 
         if (new_val < 0 || new_val >= HIST_SIZE) return -123456.0f;

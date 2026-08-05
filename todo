@@ -1,16 +1,4 @@
-Implement a LiDAR Scanner class with two modes: Path & Adaptive
-- Path mode uses the scan_path mode, upgraded to feed modelled velocity into the PID controllers
-    o Requires a cosine LUT
-- Adaptive uses a "buffer" with two slots to inhibit interruptions and poll for angle target hits.
-
-Experiment with a python host closed loop scanner
-    1. Open loop coarse lissajous
-    2. Closed loop adaptive stepping
-    3. Can we find an XY point, given an easy scene (office floor/wall)?
-
-
 IMPROVING PERFORMANCE
-    - Implement S-curve torque shape towards set points
     -Try different velocity estimation rates.
     -Try different FOC loop rates.
     -Test bit removal.
@@ -30,5 +18,6 @@ LiDAR CONFIG TESTING
     1. Take identical scans in the car park using each of the GARMIN's preset configs.
 
 
-G O A L S
+E X T R A   F E A T U R E S
 - Garmin: exporting correlation records + angle lists (+ timestamps?)
+- vibration detection and shutdown

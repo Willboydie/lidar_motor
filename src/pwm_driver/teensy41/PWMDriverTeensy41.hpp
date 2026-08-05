@@ -6,10 +6,12 @@ class PWMDriverTeensy41: public PWMDriver {
 public:
   PWMDriverTeensy41(int _n1, int _n2, int _n3, int _en) : PWMDriver(_n1, _n2, _n3, _en) {}
 
-  // Phase-align every FlexPWM submodule registered during configure3PWM().
-  // Call after both motors are initialised so cross-axis counters start together.
-  static void alignAllRegisteredSubmodules();
-  static void clearRegisteredSubmodules();
+  bool init() override {
+    clearRegisteredSubmodules();
+    if (!generic_init()) return false;
+    alignAllRegisteredSubmodules();
+    return true;
+  }
 
 private:
     void write3PWM(float duty_cycleA, float duty_cycleB, float duty_cycleC, void* params) override; 
@@ -29,6 +31,11 @@ private:
 
     void stopPwmHardware(void* params) override;
     void cleanupParams(void* params) override;
+
+    // Phase-align every FlexPWM submodule registered during configure3PWM().
+    // Call after both motors are initialised so cross-axis counters start together.
+    void alignAllRegisteredSubmodules();
+    void clearRegisteredSubmodules();
 };
 
 

@@ -6,6 +6,8 @@
 #include "../filter/LowPassFilter.hpp"
 #include "../filter/MeanFilter.hpp"
 #include "../filter/NotchFilter.hpp"
+#include "../filter/KalmanFilter.hpp"
+#include "../filter/MedianFilter.hpp"
 #include "Arduino.h"
 
 class Sensor {
@@ -23,7 +25,7 @@ public:
     bool isInitialised() { return initialised; }
     bool isEnabled() { return enabled; }
 
-    float getLatestRotorAngle() { return raw_sensor_angle; }
+    float getLatestRotorAngle() { return sensor_angle; }
     float getRawAngularVelocity() { return raw_angular_velocity; }
     float getFilteredAngularVelocity() { return filtered_angular_velocity; }
 
@@ -50,8 +52,8 @@ private:
     virtual void hardwareDeinit() = 0;
     virtual float getSensorAngle() = 0;
 
-    float raw_sensor_angle = 0.0f;
-    float previous_raw_angle = 0.0f;
+    float sensor_angle = 0.0f;
+    float previous_sensor_angle = 0.0f;
     float raw_angular_velocity = 0.0f;
     float filtered_angular_velocity = 0.0f;
     uint32_t t0 = 0;
@@ -62,7 +64,8 @@ private:
     _LowPassFilter velocityLPF{VELOCITY_LOW_PASS_FILTER_TAU};
     _LowPassFilter angleLPF{ANGLE_LOW_PASS_FILTER_TAU};
 
-    MeanFilter meanFilter;
+    MedianFilter<12, 16> medianFilter;
+    KalmanFilter kalmanFilter{DEFAULT_KALMAN_QA};
 
 protected:
     bool enabled = false;

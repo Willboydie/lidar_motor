@@ -19,9 +19,10 @@ class InlineCurrentSenseSTM32G4 : public InlineCurrentSense {
 public:
     InlineCurrentSenseSTM32G4(float mVpA, int pinA, int pinB, PWMDriverSTM32G4& driver);
 
+    bool init() override;
     // hardware_trigger=true: §3.2 TRGO+DMA (production). false: Stage 7 software scan only.
     // defer_dma_start=true: run steps 1–7 only; call startDma() or commitDualDmaStart() next.
-    bool init(bool hardware_trigger = true, bool defer_dma_start = false) override;
+    bool init(bool hardware_trigger, bool defer_dma_start = false);
     bool startDma();
     static bool commitDualDmaStart(InlineCurrentSenseSTM32G4& a, InlineCurrentSenseSTM32G4& b);
 

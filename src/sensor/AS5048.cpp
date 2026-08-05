@@ -1,7 +1,5 @@
 #include "AS5048.hpp"
 
-constexpr float _2pi_over_cpr = _2PI / CPR;
-
 
 AS5048::AS5048(int cs) : Sensor() {
     cs_pin = cs;
@@ -23,7 +21,7 @@ bool AS5048::init(SPIClass* _spi) {
 }
 
 float AS5048::getSensorAngle() {
-    return static_cast<float>(getRawAngleCount()) * _2pi_over_cpr;
+    return getRawAngleCount();
 }
 
 void AS5048::updateDiagnostics() {

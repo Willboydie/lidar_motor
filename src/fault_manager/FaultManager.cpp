@@ -8,7 +8,7 @@ FaultManager::FaultManager() = default;
 FaultManager::~FaultManager() = default;
 
 uint8_t FaultManager::faulty(FaultCode fault_code) const {
-   if (fault_code == FAULT_NONE || static_cast<uint8_t>(fault_code) > FAULT_CODE_MAX) return 0;
+   if (fault_code == FAULT_NONE || static_cast<uint8_t>(fault_code) >= FAULT_CODE_MAX) return 0;
 
    return faults[fault_code];
 }
@@ -32,12 +32,13 @@ void FaultManager::clearAllFaults() {
 
 const char* FaultManager::getMessage(FaultCode fault_code) const {
     switch (static_cast<uint8_t>(fault_code)) {
-        case FAULT_NONE:                   return "none \n";
-        case FAULT_SYS_INIT_FAILED:        return "system init failed \n";
-        case FAULT_SYS_NOT_INITIALISED:    return "system not initialised \n";
-        case FAULT_SYS_WATCHDOG:           return "watchdog \n";
-        case FAULT_SYS_LOOP_OVERRUN:       return "control loop overrun \n";
-        case FAULT_ENC_X_INIT:             return "encoder X init failed \n";
+        case FAULT_NONE:                      return "none \n";
+        case FAULT_SYS_INIT_FAILED:           return "system init failed \n";
+        case FAULT_SYS_NOT_INITIALISED:       return "system not initialised \n";
+        case FAULT_SYS_WATCHDOG:              return "watchdog \n";
+        case FAULT_SYS_LOOP_OVERRUN:          return "control loop overrun \n";
+        case FAULT_SYS_INVALID_MOTOR_NUMBER:  return "invalid motor number \n";
+        case FAULT_ENC_X_INIT:                return "encoder X init failed \n";
         case FAULT_ENC_X_UPDATE:            return "encoder X update failed \n";
         case FAULT_ENC_X_SPI_PARITY:       return "encoder X SPI parity \n";
         case FAULT_ENC_X_COF:              return "encoder X COF \n";

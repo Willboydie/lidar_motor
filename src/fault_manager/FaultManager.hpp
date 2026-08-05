@@ -2,15 +2,17 @@
 
 #include <stdint.h>
 
-static constexpr uint8_t FAULT_CODE_MAX = 255;
+static constexpr uint8_t FAULT_CODE_LIMIT = 255;
+static constexpr uint8_t FAULT_CODE_MAX = FAULT_CODE_LIMIT;
 
 enum FaultCode : uint8_t {
     FAULT_NONE = 0,
     // --- System / lifecycle (1–15) ---
-    FAULT_SYS_INIT_FAILED        = 1,
-    FAULT_SYS_NOT_INITIALISED    = 2,
-    FAULT_SYS_WATCHDOG           = 3,
-    FAULT_SYS_LOOP_OVERRUN       = 4,
+    FAULT_SYS_INIT_FAILED           = 1,
+    FAULT_SYS_NOT_INITIALISED       = 2,
+    FAULT_SYS_WATCHDOG              = 3,
+    FAULT_SYS_LOOP_OVERRUN          = 4,
+    FAULT_SYS_INVALID_MOTOR_NUMBER  = 5,
     // --- Encoder X / AS5048 (16–31) ---
     FAULT_ENC_X_INIT             = 16,
     FAULT_ENC_X_UPDATE            = 17,
@@ -81,7 +83,7 @@ public:
 private:
     const char* getMessage(FaultCode fault_code) const;
 
-    uint8_t faults[FAULT_CODE_MAX] = {};
+    uint8_t faults[FAULT_CODE_LIMIT] = {};
     uint8_t fault_count = 0;
 };
 

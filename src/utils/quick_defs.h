@@ -4,6 +4,7 @@
 #include "Arduino.h"
 #include "constants.h"
 #include "tweakable_params.h"
+#include "sin_lut_q15.hpp"
 
 // functions
 #define _sign(a) ( ( (a) < 0 )  ?  -1   : ( (a) > 0 ) )
@@ -16,6 +17,9 @@
 #define _UNUSED(v) (void) (v)
 #define _powtwo(x) (1 << (x))
 #define _swap(a, b) { auto temp = a; a = b; b = temp; }
+
+static inline bool isWithinXAngleLimits(float angle) { return (angle >= DEFAULT_X_LOWER_LIMIT && angle <= DEFAULT_X_UPPER_LIMIT); }
+static inline bool isWithinYAngleLimits(float angle) { return (angle >= DEFAULT_Y_LOWER_LIMIT && angle <= DEFAULT_Y_UPPER_LIMIT); }
 
 constexpr float ADAPTED_CPR_MULTIPLIER = (_2PI / static_cast<float>(ADAPTED_CPR));
 static inline float toRadians(float angle) { return angle * ADAPTED_CPR_MULTIPLIER; }
@@ -61,6 +65,7 @@ static inline float _cuberootApprox(float x) {
 // uses a 65 element lookup table and interpolation
 // thanks to @dekutree for his work on optimizing this
 static inline float fast_sin(float a){
+  a = normalise_angle(a);
   // 16bit integer array for sine lookup. interpolation is used for better precision
   // 16 bit precision on sine value, 8 bit fractional value for interpolation, 6bit LUT size
   // resulting precision compared to stdlib sine is 0.00006480 (RMS difference in range -PI,PI for 3217 steps)
@@ -90,6 +95,7 @@ static inline float fast_sin(float a){
   // precision +-0.005
   // it has to receive an angle in between 0 and 2PI
 static inline float fast_cos(float a){
+    a = normalise_angle(a);
     float a_sin = a + _PI_2;
     a_sin = a_sin > _2PI ? a_sin - _2PI : a_sin;
     return fast_sin(a_sin);

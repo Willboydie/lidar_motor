@@ -16,4 +16,7 @@ public:
         }
     }
     static bool mode;
+    static void setMode(bool _mode) {
+        mode = _mode;
+    }
 };

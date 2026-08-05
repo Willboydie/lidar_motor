@@ -1,6 +1,9 @@
 #include "Sensor.hpp"
 #include "../debug/Debug.hpp"
 
+constexpr float _2pi_over_adapted_cpr = _2PI / ADAPTED_CPR;
+constexpr float _2pi_over_cpr = _2PI / CPR;
+
 // constexpr int32_t _3adapted_cpr_4 = (3 * ADAPTED_CPR) / 4;
 // constexpr int32_t adapted_cpr = ADAPTED_CPR;
 // constexpr unsigned int N = VELOCITY_ESTIMATE_N;
@@ -25,7 +28,8 @@ bool Sensor::update() {
         return false;
     }
     
-    raw_sensor_angle = getSensorAngle();
+    uint16_t raw_sensor_angle = getSensorAngle();
+    sensor_angle = static_cast<float>(raw_sensor_angle) * _2pi_over_cpr;
     // updateDiagnostics();
     // if (cof == 1) {
     //     raw_sensor_angle = previous_sensor_angle;
@@ -42,10 +46,10 @@ bool Sensor::update() {
     uint32_t dt_us = t1 - t0;
     if (dt_us >= velocity_estimation_dt_us) {
         float dt = static_cast<float>(dt_us) * 1e-6f;
-        float change = findAngularError(raw_sensor_angle, previous_raw_angle);
+        float change = findAngularError(sensor_angle, previous_sensor_angle);
         raw_angular_velocity = change / dt;
-        filtered_angular_velocity = velocityLPF(raw_angular_velocity);
-        previous_raw_angle = raw_sensor_angle;
+        filtered_angular_velocity = velocityLPF(filtered_angular_velocity);
+        previous_sensor_angle = sensor_angle;
         t0 = t1;
     }
 
@@ -56,7 +60,7 @@ void Sensor::enable() {
     if (enabled) return;
     enabled = true;
     t0 = micros();
-    previous_raw_angle = getSensorAngle();
+    previous_sensor_angle = getSensorAngle();
     raw_angular_velocity = 0.0f;
     filtered_angular_velocity = velocityLPF(0.0f);
     Debug::msg("SENSOR ENABLED");

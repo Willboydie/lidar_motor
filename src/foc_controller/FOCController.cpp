@@ -1,19 +1,26 @@
 #include "FOCController.hpp"
 
-FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor, SCurve& _s_curve) 
+FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor) 
 : motor_number(_motor.motor_number)
 , sensor(_sensor)
 , pwm_driver(_pwm_driver)
-, s_curve(_s_curve)
 , motor_phase_resistance(_motor.phase_resistance)
 , motor_K_v(_motor.K_v)
 , motor_K_e(_motor.K_e)
 , motor_pole_pairs(_motor.pole_pairs)
 , motor_sensor_direction(_motor.sensor_direction)
 , motor_electrical_offset(_motor.electrical_offset)
-{};
-
-static inline bool isMotorX(int motor_number) { return motor_number == 1; }
+{
+    if (motor_number == 1) { // motor X = 1, motor Y = 2
+        PID_angle_controller = PIDControl(ANGLE_P_X, ANGLE_I_X, ANGLE_D_X, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT);
+    } else if (motor_number == 2) {
+        PID_angle_controller = PIDControl(ANGLE_P_Y, ANGLE_I_Y, ANGLE_D_Y, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT);
+    } else {
+        faultManager.addFault(FAULT_SYS_INVALID_MOTOR_NUMBER);
+        Debug::msg("FOC CONTROLLER INIT FAILED: INVALID MOTOR NUMBER");
+        return false;
+    }
+};
 
 bool FOCController::init() {
     if (!sensor.isInitialised()) {
@@ -46,59 +53,52 @@ bool FOCController::init() {
 // (at most) the current-loop rate, and the outer stages are further rate-gated off
 // micros(). The current loop owns the sensor refresh + commutation so the outer
 // stages always run against fresh angle/velocity.
-bool FOCController::loop() {
-    if (!enabled) return false;
+void FOCController::current_loop() {
+    if (!enabled) return;
     if (!initialised) {
         faultManager.addFault(FAULT_SYS_NOT_INITIALISED);
-        return false;
+        return;
     }
-
-    const uint32_t now_us = micros();
-    const uint32_t current_dt_us = now_us - last_current_us;
-    if (current_dt_us < CURRENT_LOOP_DT_US) return true;
-    const float dt = current_dt_us / 1000000.0f;
-    s_curve.updateTime(dt);
-    last_current_us = now_us;
 
     if (!sensor.update()) {
         faultManager.addFault(isMotorX(motor_number) ? FAULT_ENC_X_UPDATE : FAULT_ENC_Y_UPDATE);
-        return false;
+        return;
     }
     mechanical_angle = sensor.getLatestRotorAngle();
     electrical_angle = calculate_electrical_angle();
     angular_velocity = sensor.getFilteredAngularVelocity();
 
-    // --- Angle loop (outermost): angular error -> target velocity ---
-    const uint32_t angle_dt_us = now_us - last_angle_us;
-    if (controlMode == ANGLE && angle_dt_us >= ANGLE_LOOP_DT_US) {
-        last_angle_us = now_us;
-
-        s_curve.updatePosTarget(approach_angle);
-        target_angle = last_checkpoint_angle + approach_angle;
-        angular_error = findAngularError(target_angle, mechanical_angle);
-        target_velocity = PID_angle_controller(angular_error) + approach_velocity;
-    }
-
-    // --- Velocity loop: velocity error -> target q current ---
-    const uint32_t velocity_dt_us = now_us - last_velocity_us;
-    if (velocity_dt_us >= VELOCITY_LOOP_DT_US) {
-        last_velocity_us = now_us;
-
-        s_curve.updateVeloAccelTarget(approach_velocity, approach_acceleration);
-        velocity_error = target_velocity - angular_velocity;
-        const float Iq_pid = PID_velocity_controller(velocity_error);
-        
-        // Feed Forward velocity and acceleration values
-        // float Iq_vff = 0.0f;
-        // float Iq_aff = 0.0f;
-`
-        target_q_current = _constrain(Iq_pid, -MOTOR_CURRENT_LIMIT, MOTOR_CURRENT_LIMIT);
-    }
-
     // --- Current loop (innermost): target current -> Vd/Vq ---
     currentLoop();
     setPhaseVoltage();
-    return true;
+}
+
+void FOCController::velocity_loop() {
+    if (!enabled) return;
+    if (!initialised) {
+        faultManager.addFault(FAULT_SYS_NOT_INITIALISED);
+        return;
+    }
+    target_velocity += approach_velocity;
+    velocity_error = target_velocity - angular_velocity;
+    const float Iq_pid = PID_velocity_controller(velocity_error);
+    
+    // Feed Forward velocity and acceleration values
+    // float Iq_vff = 0.0f;
+    // float Iq_aff = 0.0f;
+    target_q_current = _constrain(Iq_pid, -MOTOR_CURRENT_LIMIT, MOTOR_CURRENT_LIMIT);
+}
+
+void FOCController::angle_loop() {
+    if (!enabled) return;
+    if (!initialised) {
+        faultManager.addFault(FAULT_SYS_NOT_INITIALISED);
+        return;
+    }
+
+    angular_error = findAngularError(target_angle, mechanical_angle);
+    rollingAngularError = rollingMeanErrorFilter(angular_error);
+    target_velocity = PID_angle_controller(angular_error);
 }
 
 // Innermost cascade stage — compile-time polymorphic.
@@ -234,12 +234,6 @@ void FOCController::setControlMode(ControlMode _controlMode) {
         }
     }
     controlMode = _controlMode;
-}
-
-void FOCController::setTargetAngle(float next_checkpoint_angle) {
-    last_checkpoint_angle = mechanical_angle;
-    float D = next_checkpoint_angle - last_checkpoint_angle;
-    s_curve.updateParams(D);
 }
 
 
