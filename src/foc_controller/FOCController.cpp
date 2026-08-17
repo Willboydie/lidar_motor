@@ -1,9 +1,24 @@
 #include "FOCController.hpp"
 
+inline bool isMotorX(int motor_number) { return motor_number == 1; }
+inline bool isMotorY(int motor_number) { return motor_number == 2; }
+
+// The PID gains are per-axis, so they have to be picked from the motor number in
+// the member-initialiser list — PIDControl has no default constructor.
 FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _motor) 
 : motor_number(_motor.motor_number)
 , sensor(_sensor)
 , pwm_driver(_pwm_driver)
+, PID_angle_controller(
+      isMotorY(_motor.motor_number) ? ANGLE_P_Y : ANGLE_P_X,
+      isMotorY(_motor.motor_number) ? ANGLE_I_Y : ANGLE_I_X,
+      isMotorY(_motor.motor_number) ? ANGLE_D_Y : ANGLE_D_X,
+      ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT)
+, PID_velocity_controller(
+      isMotorY(_motor.motor_number) ? VELOCITY_P_Y : VELOCITY_P_X,
+      isMotorY(_motor.motor_number) ? VELOCITY_I_Y : VELOCITY_I_X,
+      isMotorY(_motor.motor_number) ? VELOCITY_D_Y : VELOCITY_D_X,
+      VELOCITY_RAMP, CURRENT_LOWER_LIMIT, CURRENT_UPPER_LIMIT)
 , motor_phase_resistance(_motor.phase_resistance)
 , motor_K_v(_motor.K_v)
 , motor_K_e(_motor.K_e)
@@ -11,16 +26,11 @@ FOCController::FOCController(Sensor& _sensor, PWMDriver& _pwm_driver, Motor& _mo
 , motor_sensor_direction(_motor.sensor_direction)
 , motor_electrical_offset(_motor.electrical_offset)
 {
-    if (motor_number == 1) { // motor X = 1, motor Y = 2
-        PID_angle_controller = PIDControl(ANGLE_P_X, ANGLE_I_X, ANGLE_D_X, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT);
-    } else if (motor_number == 2) {
-        PID_angle_controller = PIDControl(ANGLE_P_Y, ANGLE_I_Y, ANGLE_D_Y, ANGLE_RAMP, VELOCITY_LOWER_LIMIT, VELOCITY_UPPER_LIMIT);
-    } else {
+    if (!isMotorX(motor_number) && !isMotorY(motor_number)) {
         faultManager.addFault(FAULT_SYS_INVALID_MOTOR_NUMBER);
         Debug::msg("FOC CONTROLLER INIT FAILED: INVALID MOTOR NUMBER");
-        return false;
     }
-};
+}
 
 bool FOCController::init() {
     if (!sensor.isInitialised()) {

@@ -38,6 +38,7 @@ void ScanEngine::beginCoarseScanning() {
     }
     dynamicRoutine = DynamicRoutine::SEEKING_COARSE_START;
     coarseScan.resetTime();
+    hit = true;
 }
 
 void ScanEngine::stopCoarseScanning() {
@@ -206,6 +207,7 @@ void ScanEngine::setNewPoint2PointTarget(float _angleX, float _angleY) {
     float Dy = adaptiveTargetY - baseAngleY;
     sCurveX.setNewDisplacement(Dx);
     sCurveY.setNewDisplacement(Dy);
+    hit = false;
 }
 
 void ScanEngine::updateCoarseScanCentre(float _centreX, float _centreY) {
@@ -226,11 +228,14 @@ void ScanEngine::establishAsPoint2PointBase() {
     baseAngleY = focControllerY.getMechanicalAngle();
     sCurveX.setTimeToEnd();
     sCurveY.setTimeToEnd();
+    hit = true;
 }
 
 
 // -------------------- hit test -------------------------------
 bool ScanEngine::atTarget() {
-    return focControllerX.getRollingAngularError() < TARGET_ANGLE_TOLERANCE
-        && focControllerY.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
+    bool xHit = focControllerX.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
+    bool yHit = focControllerY.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
+    hit = xHit && yHit;
+    return hit;
 }

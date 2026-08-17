@@ -29,7 +29,7 @@ By the end of this lecture you will be able to:
 
 ## I. The common abstraction
 
-> *Source: [`src/pwm_driver/PWMDriver.hpp`](src/pwm_driver/PWMDriver.hpp)*
+> *Source: `[src/pwm_driver/PWMDriver.hpp](src/pwm_driver/PWMDriver.hpp)`*
 
 Every motor in this project is driven by an object of type `PWMDriver` — an abstract base class. The class hides the MCU-specific details behind **four pure-virtual hooks**:
 
@@ -52,8 +52,8 @@ The public API the rest of the firmware calls is just three methods:
 
 Two concrete subclasses provide the implementation:
 
-- **`PWMDriverTeensy41`** — [`src/pwm_driver/teensy41/`](src/pwm_driver/teensy41/)
-- **`PWMDriverSTM32G4`** — [`src/pwm_driver/stm32g4/`](src/pwm_driver/stm32g4/)
+- **`PWMDriverTeensy41`** — `[src/pwm_driver/teensy41/](src/pwm_driver/teensy41/)`
+- **`PWMDriverSTM32G4`** — `[src/pwm_driver/stm32g4/](src/pwm_driver/stm32g4/)`
 
 ---
 
@@ -73,7 +73,7 @@ For multi-motor systems we additionally want the timers driving each phase to be
 ## III. Case study 1 — Teensy 4.1
 
 > *NXP i.MX RT1062 · ARM Cortex-M7 @ 600 MHz*
-> *Source: [`src/pwm_driver/teensy41/`](src/pwm_driver/teensy41/)*
+> *Source: `[src/pwm_driver/teensy41/](src/pwm_driver/teensy41/)`*
 
 ### 3.1 Hardware: FlexPWM
 
@@ -154,7 +154,7 @@ In `setup_pwm_timer_submodule()`:
 ## IV. Case study 2 — STM32G4
 
 > *ARM Cortex-M4 @ 170 MHz*
-> *Source: [`src/pwm_driver/stm32g4/`](src/pwm_driver/stm32g4/)*
+> *Source: `[src/pwm_driver/stm32g4/](src/pwm_driver/stm32g4/)`*
 
 ### 4.1 Hardware: TIMx
 

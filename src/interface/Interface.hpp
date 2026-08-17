@@ -23,6 +23,7 @@
 #pragma pack(push, 1)
 struct ControlPacket {
     uint8_t header;
+    uint16_t len;
     float target_angle_x;
     float target_angle_y;
     uint16_t distance;
@@ -30,27 +31,21 @@ struct ControlPacket {
     float mechanical_angle_y;
     float associated_angle_x;   // LDM sample-time angle [rad] (AngleTracker)
     float associated_angle_y;
+    bool reached_p2p_target;
 };
 
 struct StatusPacket {
     uint8_t header;
+    uint16_t len;
     uint8_t enabled;
-    uint8_t control_mode;
-    uint8_t scanning;
+    uint8_t scan_mode;
+    uint8_t dynamic_routine;
     uint8_t debug_mode;
-    float velocity_p;
-    float velocity_i;
-    float velocity_d;
-    float velocity_ramp;
-    float angle_p;
-    float angle_i;
-    float angle_d;
-    float angle_ramp;
-    float velocity_lpf_tau;
-    float angle_lpf_tau;
-    float foc_voltage_lpf_tau;
-    float velocity_feed_forward;
-    float acceleration_feed_forward;
+    uint8_t has_fault;
+    float coarse_centre_x;
+    float coarse_centre_y;
+    float p2p_target_x;
+    float p2p_target_y;
 };
 #pragma pack(pop)
 

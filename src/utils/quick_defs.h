@@ -4,7 +4,6 @@
 #include "Arduino.h"
 #include "constants.h"
 #include "tweakable_params.h"
-#include "sin_lut_q15.hpp"
 
 // functions
 #define _sign(a) ( ( (a) < 0 )  ?  -1   : ( (a) > 0 ) )
@@ -23,8 +22,6 @@ static inline bool isWithinYAngleLimits(float angle) { return (angle >= DEFAULT_
 
 constexpr float ADAPTED_CPR_MULTIPLIER = (_2PI / static_cast<float>(ADAPTED_CPR));
 static inline float toRadians(float angle) { return angle * ADAPTED_CPR_MULTIPLIER; }
-
-static inline float worldToLocal(int motor_number, float world_angle) { return motor_number == 1 ? -world_angle + WORLD_OFFSET_X : -world_angle + WORLD_OFFSET_Y; }
 
 // normalizing radian angle to [0,2PI]
 static inline float normalise_angle(float angle){

@@ -95,7 +95,7 @@
 #define DEFAULT_Y_UPPER_LIMIT 3.9f
 
 #define DEFAULT_ANGLE_ERROR_MEAN_WINDOW_LENGTH 20
-#define TARGET_ANGLE_TOLERANCE 0.01f
+#define TARGET_ANGLE_TOLERANCE 0.001f
 
 // Current sense (SimpleFOC Shield 3.2, ACS712-05B)
 // ACS712-05B is 185 mV/A at the sensor; the shield maps its 0-5 V swing into

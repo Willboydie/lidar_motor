@@ -2,8 +2,9 @@
 Motor control realtime plotter — Qt dashboard for V1 serial telemetry.
 
 Parses ControlPacket (0x55 @ CONTROL_PACKET_PERIOD_US, 27 B), StatusPacket
-(0xAA @ 10 Hz), and framed Debug messages (0xFF 0x04 0x06 + newline-terminated
-text) per docs/serial_protocol.md / src/debug/Debug.hpp.
+(0xAA @ 10 Hz, 22 B), and framed Debug messages
+(0xFF 0x04 0x06 + newline-terminated text) per docs/HOST_PROTOCOL.md and
+src/debug/Debug.hpp.
 
 Primary use with scan_engine_test: XY plot of FOC target angles
 (ControlPacket.target_angle_x vs target_angle_y) — last N samples at once.
@@ -49,9 +50,25 @@ STATUS_HEADER = 0xAA
 DEBUG_HEADER = bytes((0xFF, 0x04, 0x06))
 DEBUG_HEADER_SIZE = len(DEBUG_HEADER)
 CONTROL_STRUCT = struct.Struct("<BffHffff")  # 27 B — matches Interface.hpp ControlPacket
-STATUS_STRUCT = struct.Struct("<BBBBBfffffffffffff")  # 57 B — matches Interface.hpp StatusPacket
+STATUS_STRUCT = struct.Struct("<BBBBBBffff")  # 22 B — matches Interface.hpp StatusPacket
 CONTROL_SIZE = CONTROL_STRUCT.size
 STATUS_SIZE = STATUS_STRUCT.size
+
+SCAN_MODE_NAMES = {
+    0: "Off",
+    1: "Coarse",
+    2: "Point-to-point",
+}
+
+DYNAMIC_ROUTINE_NAMES = {
+    0: "None",
+    1: "Enabling",
+    2: "Disabling",
+    3: "Seeking coarse start",
+    4: "Winding up to coarse",
+    5: "Tapering down from coarse",
+    6: "Seeking point-to-point start",
+}
 
 DISABLE_ENABLE_CMD = 0x01
 SET_DEBUG_MODE_CMD = 0x02
@@ -334,8 +351,9 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.paused = False
         self._enabled = False
         self._debug = True  # matches DEFAULT_DEBUG_SETTING
-        self._scanning = False
-        self._control_mode = 1
+        self._scan_mode = 0
+        self._dynamic_routine = 0
+        self._has_fault = False
         self._rate_last_time = time.monotonic()
         self._rate_last_count = 0
 
@@ -400,8 +418,14 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.debug_btn = QtWidgets.QPushButton("Debug")
         self.debug_btn.clicked.connect(self._send_debug_toggle)
         self._style_debug_btn()
+        self.scan_mode_label = QtWidgets.QLabel("Scan mode: Off")
+        self.routine_label = QtWidgets.QLabel("Transition: None")
+        self.fault_label = QtWidgets.QLabel("Faults: none")
         state_layout.addWidget(self.enable_btn)
         state_layout.addWidget(self.debug_btn)
+        state_layout.addWidget(self.scan_mode_label)
+        state_layout.addWidget(self.routine_label)
+        state_layout.addWidget(self.fault_label)
         panel.addWidget(state)
 
         scan_box = QtWidgets.QGroupBox("Scan Engine")
@@ -720,14 +744,57 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.status_received.emit(packet)
 
     def _on_status_ui(self, packet: tuple) -> None:
-        enabled = bool(packet[1])
+        (
+            _header,
+            enabled_raw,
+            scan_mode,
+            dynamic_routine,
+            debug_raw,
+            has_fault_raw,
+            coarse_centre_x,
+            coarse_centre_y,
+            p2p_target_x,
+            p2p_target_y,
+        ) = packet
+
+        enabled = bool(enabled_raw)
         if enabled != self._enabled:
             self._enabled = enabled
             self._style_enable_btn()
-        debug = bool(packet[4])
+
+        debug = bool(debug_raw)
         if debug != self._debug:
             self._debug = debug
             self._style_debug_btn()
+
+        self._scan_mode = scan_mode
+        self._dynamic_routine = dynamic_routine
+        self._has_fault = bool(has_fault_raw)
+        self.scan_mode_label.setText(
+            f"Scan mode: {SCAN_MODE_NAMES.get(scan_mode, f'Unknown ({scan_mode})')}"
+        )
+        self.routine_label.setText(
+            "Transition: "
+            + DYNAMIC_ROUTINE_NAMES.get(
+                dynamic_routine, f"Unknown ({dynamic_routine})"
+            )
+        )
+        self.fault_label.setText(
+            "Faults: latched — request error messages" if self._has_fault else "Faults: none"
+        )
+        self.fault_label.setStyleSheet(
+            "color: #ff5555; font-weight: bold;" if self._has_fault else "color: #55ff55;"
+        )
+
+        # Mirror firmware-reported targets without disrupting a value being edited.
+        if not self.centre_x_spin.hasFocus():
+            self.centre_x_spin.setValue(coarse_centre_x)
+        if not self.centre_y_spin.hasFocus():
+            self.centre_y_spin.setValue(coarse_centre_y)
+        if not self.p2p_x_spin.hasFocus():
+            self.p2p_x_spin.setValue(p2p_target_x)
+        if not self.p2p_y_spin.hasFocus():
+            self.p2p_y_spin.setValue(p2p_target_y)
 
 
     def _toggle_pause(self, checked: bool) -> None:

@@ -192,13 +192,15 @@ void Interface::sendControlPacket() {
     // Live mechanical angles for the motor-control UI (UI/realtime_plotter.py).
     ControlPacket packet = {
         CONTROL_PACKET_HEADER,
+        static_cast<uint16_t>(CONTROL_PACKET_LEN),
         focControllerX.getTargetAngle(),
         focControllerY.getTargetAngle(),
         ldm.getLatestDistance(),
         sensorX.getLatestRotorAngle(),
         sensorY.getLatestRotorAngle(),
         angleTrackerX.getAssociatedAngle(),
-        angleTrackerY.getAssociatedAngle()
+        angleTrackerY.getAssociatedAngle(),
+        scanEngine.getReachedP2PTarget()
     };
     Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }
@@ -206,11 +208,12 @@ void Interface::sendControlPacket() {
 void Interface::sendStatusPacket() {
     StatusPacket packet = {
         STATUS_PACKET_HEADER,
+        static_cast<uint16_t>(STATUS_PACKET_LEN),
         static_cast<uint8_t>(stateMachine.enabled),
         static_cast<uint8_t>(scanEngine.getScanMode()),
         static_cast<uint8_t>(scanEngine.getDynamicRoutine()),
         static_cast<uint8_t>(Debug::mode),
-        static_cast<uint8_t>(faultManager.hasFault())
+        static_cast<uint8_t>(faultManager.hasFault()),
         static_cast<float>(scanEngine.getCoarseScanCentreX()),
         static_cast<float>(scanEngine.getCoarseScanCentreY()),
         static_cast<float>(scanEngine.getPoint2PointTargetX()),

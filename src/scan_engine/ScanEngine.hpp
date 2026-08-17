@@ -44,6 +44,7 @@ public:
     float getCoarseScanCentreY() { return baseAngleY; }
     float getPoint2PointTargetX() { return adaptiveTargetX; }
     float getPoint2PointTargetY() { return adaptiveTargetY; }
+    bool getReachedP2PTarget() { return hit; }
 
     DynamicRoutine getDynamicRoutine() { return dynamicRoutine; }
     ScanMode getScanMode() { return scanMode; }
@@ -82,6 +83,7 @@ private:
     float adaptiveTargetY = 0.0f;
     float checkpointAngleX = 0.0f;
     float checkpointAngleY = 0.0f;
+    bool hit = true;
 
     const float neutralX = DEFAULT_NEUTRAL_X_POS;
     const float neutralY = DEFAULT_NEUTRAL_Y_POS;
