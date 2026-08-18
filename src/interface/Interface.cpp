@@ -200,7 +200,7 @@ void Interface::sendControlPacket() {
         sensorY.getLatestRotorAngle(),
         angleTrackerX.getAssociatedAngle(),
         angleTrackerY.getAssociatedAngle(),
-        scanEngine.getReachedP2PTarget()
+        static_cast<uint8_t>(scanEngine.getReachedP2PTarget())
     };
     Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }

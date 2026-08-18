@@ -16,6 +16,7 @@ public:
     void setNewDisplacement(float new_D);
     void resetTime() { t = 0.0f; }
     void setTimeToEnd() { t = tau; }
+    float movementFinished() { return t >= tau; }
 
 private:
     float compute_tau();

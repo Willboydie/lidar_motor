@@ -1,27 +1,21 @@
 """
-Motor control realtime plotter — Qt dashboard for V1 serial telemetry.
+Motor control realtime plotter — Qt dashboard for LiDAR module serial telemetry.
 
-Parses ControlPacket (0x55 @ CONTROL_PACKET_PERIOD_US, 27 B), StatusPacket
-(0xAA @ 10 Hz, 22 B), and framed Debug messages
-(0xFF 0x04 0x06 + newline-terminated text) per docs/HOST_PROTOCOL.md and
-src/debug/Debug.hpp.
+Parses ControlPacket (0x55 @ 1 kHz, 30 B), StatusPacket (0xAA @ 10 Hz, 24 B),
+and framed Debug messages ([0xFF][len uint16 LE][payload]) per docs/HOST_PROTOCOL.md.
 
-Primary use with scan_engine_test: XY plot of FOC target angles
-(ControlPacket.target_angle_x vs target_angle_y) — last N samples at once.
-Mechanical trail is shown dashed when available; associated angles ignored.
+Primary use: XY plot of FOC target angles (target_angle_x vs target_angle_y) —
+last N samples at once. Mechanical trail is shown dashed when available.
 
 Host → device commands use framed payloads matching src/parser/Parser.hpp:
     [cmd:1][len_lo:1][len_hi:1][payload: len bytes]
-Interface.onCommand enacts them (ScanEngine enable / coarse / P2P / tuning).
 See src/utils/cmd_defs.h.
 
-Flash the ScanEngine bench first:
+Flash production firmware:
     pio run -e teensy41 --target upload
-    # entry: src/_teensy_main_stub.cpp → tests/scan/scan_engine_test.hpp
 
-Typical flow to see targets move:
-    Connect → Scan Engine Enable → Coarse Begin
-    (System Enable is optional; scan_engine_test streams targets without FOC loops.)
+Typical flow:
+    Connect → Enable → Scan Engine Enable → Coarse Begin (or set P2P target)
 
 Usage:
     pip install PySide6 pyqtgraph pyserial
@@ -46,13 +40,12 @@ from PySide6 import QtCore, QtGui, QtWidgets
 # ---------- Protocol (mirrors Interface.hpp / cmd_defs.h / Debug.hpp) ----------
 CONTROL_HEADER = 0x55
 STATUS_HEADER = 0xAA
-# Debug::msg — Serial.write(DEBUG_HEADER) then Serial.println(text)
-DEBUG_HEADER = bytes((0xFF, 0x04, 0x06))
-DEBUG_HEADER_SIZE = len(DEBUG_HEADER)
-CONTROL_STRUCT = struct.Struct("<BffHffff")  # 27 B — matches Interface.hpp ControlPacket
-STATUS_STRUCT = struct.Struct("<BBBBBBffff")  # 22 B — matches Interface.hpp StatusPacket
-CONTROL_SIZE = CONTROL_STRUCT.size
-STATUS_SIZE = STATUS_STRUCT.size
+DEBUG_HEADER = 0xFF
+PREFIX_SIZE = 3  # [header:1][len:uint16 LE]
+CONTROL_PAYLOAD_LEN = 27  # sizeof(ControlPacket) − 3
+STATUS_PAYLOAD_LEN = 21   # sizeof(StatusPacket) − 3
+CONTROL_STRUCT = struct.Struct("<BHffHffffB")   # 30 B packed ControlPacket
+STATUS_STRUCT = struct.Struct("<BHBBBBBffff")  # 24 B packed StatusPacket
 
 SCAN_MODE_NAMES = {
     0: "Off",
@@ -72,27 +65,30 @@ DYNAMIC_ROUTINE_NAMES = {
 
 DISABLE_ENABLE_CMD = 0x01
 SET_DEBUG_MODE_CMD = 0x02
-VELOCITY_P_SET_CMD = 0x08
-VELOCITY_I_SET_CMD = 0x09
-ANGLE_P_SET_CMD = 0x0C
-ANGLE_I_SET_CMD = 0x0D
-VELOCITY_LPF_TAU_SET_CMD = 0x12
+GET_ERROR_MSG_CMD = 0x1F
+
+# Per-axis tuning (plotter exposes X only; see cmd_defs.h for Y counterparts)
+VELOCITY_P_X_SET_CMD = 0x08
+VELOCITY_I_X_SET_CMD = 0x09
+ANGLE_P_X_SET_CMD = 0x0E
+ANGLE_I_X_SET_CMD = 0x0F
+VELOCITY_LPF_TAU_SET_CMD = 0x14
 
 # Scan Engine (src/utils/cmd_defs.h)
-ENABLE_SCANENGINE_CMD = 0x1D
-DISABLE_SCANENGINE_CMD = 0x1E
-BEGIN_COARSE_SCANNING_CMD = 0x1F
-X_AMPLITUDE_SET_CMD = 0x21
-Y_AMPLITUDE_SET_CMD = 0x22
-X_FREQUENCY_SET_CMD = 0x23
-Y_FREQUENCY_SET_CMD = 0x24
-X_PHASE_SET_CMD = 0x25
-Y_PHASE_SET_CMD = 0x26
-STOP_COARSE_SCANNING_CMD = 0x27
-BEGIN_POINT2POINT_SCANNING_CMD = 0x28
-STOP_POINT2POINT_SCANNING_CMD = 0x29
-SET_POINT2POINT_TARGET_CMD = 0x2A
-UPDATE_COARSE_SCAN_CENTRE_CMD = 0x2B
+ENABLE_SCANENGINE_CMD = 0x21
+DISABLE_SCANENGINE_CMD = 0x22
+BEGIN_COARSE_SCANNING_CMD = 0x23
+X_AMPLITUDE_SET_CMD = 0x24
+Y_AMPLITUDE_SET_CMD = 0x25
+X_FREQUENCY_SET_CMD = 0x26
+Y_FREQUENCY_SET_CMD = 0x27
+X_PHASE_SET_CMD = 0x28
+Y_PHASE_SET_CMD = 0x29
+STOP_COARSE_SCANNING_CMD = 0x2A
+BEGIN_POINT2POINT_SCANNING_CMD = 0x2B
+STOP_POINT2POINT_SCANNING_CMD = 0x2C
+SET_POINT2POINT_TARGET_CMD = 0x2D
+UPDATE_COARSE_SCAN_CENTRE_CMD = 0x2E
 
 DEFAULT_BAUD = 460800
 N_POINTS = 5 * 250  # points shown at once on the XY plot
@@ -107,27 +103,28 @@ def normalize_angle(angle: float) -> float:
     return a if a >= 0.0 else (a + TWO_PI)
 
 # ControlPacket unpack indices (header + fields):
-# 0 header, 1 target_x, 2 target_y, 3 distance,
-# 4 mechanical_x, 5 mechanical_y, 6 associated_x, 7 associated_y
-_CONTROL_TARGET_X = 1
-_CONTROL_TARGET_Y = 2
-_CONTROL_MECH_X = 4
-_CONTROL_MECH_Y = 5
+# 0 header, 1 len, 2 target_x, 3 target_y, 4 distance,
+# 5 mechanical_x, 6 mechanical_y, 7 associated_x, 8 associated_y, 9 reached_p2p
+_CONTROL_TARGET_X = 2
+_CONTROL_TARGET_Y = 3
+_CONTROL_MECH_X = 5
+_CONTROL_MECH_Y = 6
+_CONTROL_REACHED_P2P = 9
 
 TUNING_FIELDS = (
-    ("velocity_p", VELOCITY_P_SET_CMD),
-    ("velocity_i", VELOCITY_I_SET_CMD),
-    ("angle_p", ANGLE_P_SET_CMD),
-    ("angle_i", ANGLE_I_SET_CMD),
+    ("velocity_p_x", VELOCITY_P_X_SET_CMD),
+    ("velocity_i_x", VELOCITY_I_X_SET_CMD),
+    ("angle_p_x", ANGLE_P_X_SET_CMD),
+    ("angle_i_x", ANGLE_I_X_SET_CMD),
     ("velocity_lpf_tau", VELOCITY_LPF_TAU_SET_CMD),
 )
 
 STATUS_DEFAULTS = {name: 0.0 for name, _ in TUNING_FIELDS}
 STATUS_DEFAULTS.update(
     {
-        "velocity_p": 1.0,
-        "angle_p": 6.0,
-        "angle_i": 12.0,
+        "velocity_p_x": 1.0,
+        "angle_p_x": 6.0,
+        "angle_i_x": 12.0,
         "velocity_lpf_tau": 0.2,
     }
 )
@@ -253,50 +250,56 @@ class SerialReader(threading.Thread):
     def _find_next_frame(buf: bytearray, start: int = 1) -> int:
         """Index of the next control/status/debug frame, or -1 if none."""
         next_hdr = -1
-        for h in (CONTROL_HEADER, STATUS_HEADER):
+        for h in (CONTROL_HEADER, STATUS_HEADER, DEBUG_HEADER):
             idx = buf.find(bytes([h]), start)
             if idx >= 0 and (next_hdr < 0 or idx < next_hdr):
                 next_hdr = idx
-        idx = buf.find(DEBUG_HEADER, start)
-        if idx >= 0 and (next_hdr < 0 or idx < next_hdr):
-            next_hdr = idx
         return next_hdr
 
     def _parse_buffer(self) -> None:
         buf = self._rx_buffer
         while buf:
             header = buf[0]
-            if header == CONTROL_HEADER:
-                if len(buf) < CONTROL_SIZE:
+            if header in (CONTROL_HEADER, STATUS_HEADER):
+                if len(buf) < PREFIX_SIZE:
                     break
-                packet = CONTROL_STRUCT.unpack_from(buf, 0)
-                del buf[:CONTROL_SIZE]
-                self.on_control(time.monotonic(), packet)
-                continue
-            if header == STATUS_HEADER:
-                if len(buf) < STATUS_SIZE:
-                    break
-                packet = STATUS_STRUCT.unpack_from(buf, 0)
-                del buf[:STATUS_SIZE]
-                self.on_status(packet)
-                continue
-            if header == DEBUG_HEADER[0]:
-                if len(buf) < DEBUG_HEADER_SIZE:
-                    break
-                if buf[:DEBUG_HEADER_SIZE] == DEBUG_HEADER:
-                    nl = buf.find(b"\n", DEBUG_HEADER_SIZE)
-                    if nl < 0:
-                        if len(buf) > 512:
-                            del buf[0]
-                            continue
-                        break
-                    line = bytes(buf[DEBUG_HEADER_SIZE : nl + 1])
-                    del buf[: nl + 1]
-                    text = line.decode("utf-8", errors="replace").strip()
-                    if text:
-                        self.on_debug(text)
+                payload_len = struct.unpack_from("<H", buf, 1)[0]
+                expected = (
+                    CONTROL_PAYLOAD_LEN
+                    if header == CONTROL_HEADER
+                    else STATUS_PAYLOAD_LEN
+                )
+                if payload_len != expected:
+                    del buf[0]
                     continue
-                # Lone 0xFF that is not a debug frame — treat as text/resync below.
+                total = PREFIX_SIZE + payload_len
+                if len(buf) < total:
+                    break
+                struct_fmt = CONTROL_STRUCT if header == CONTROL_HEADER else STATUS_STRUCT
+                packet = struct_fmt.unpack_from(buf, 0)
+                del buf[:total]
+                if header == CONTROL_HEADER:
+                    self.on_control(time.monotonic(), packet)
+                else:
+                    self.on_status(packet)
+                continue
+            if header == DEBUG_HEADER:
+                if len(buf) < PREFIX_SIZE:
+                    break
+                payload_len = struct.unpack_from("<H", buf, 1)[0]
+                if payload_len > 512:
+                    del buf[0]
+                    continue
+                total = PREFIX_SIZE + payload_len
+                if len(buf) < total:
+                    break
+                text = bytes(buf[PREFIX_SIZE:total]).decode(
+                    "utf-8", errors="replace"
+                )
+                del buf[:total]
+                if text:
+                    self.on_debug(text)
+                continue
 
             nl = buf.find(b"\n")
             next_hdr = self._find_next_frame(buf, 1)
@@ -350,10 +353,11 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self._tuning_values = dict(STATUS_DEFAULTS)
         self.paused = False
         self._enabled = False
-        self._debug = True  # matches DEFAULT_DEBUG_SETTING
+        self._debug = False  # firmware boots with debug off
         self._scan_mode = 0
         self._dynamic_routine = 0
         self._has_fault = False
+        self._reached_p2p = True
         self._rate_last_time = time.monotonic()
         self._rate_last_count = 0
 
@@ -421,10 +425,12 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.scan_mode_label = QtWidgets.QLabel("Scan mode: Off")
         self.routine_label = QtWidgets.QLabel("Transition: None")
         self.fault_label = QtWidgets.QLabel("Faults: none")
+        self.p2p_reached_label = QtWidgets.QLabel("P2P target reached: yes")
         state_layout.addWidget(self.enable_btn)
         state_layout.addWidget(self.debug_btn)
         state_layout.addWidget(self.scan_mode_label)
         state_layout.addWidget(self.routine_label)
+        state_layout.addWidget(self.p2p_reached_label)
         state_layout.addWidget(self.fault_label)
         panel.addWidget(state)
 
@@ -461,8 +467,8 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         labels = {
             "x_amplitude": "X amplitude [rad]",
             "y_amplitude": "Y amplitude [rad]",
-            "x_frequency": "X frequency [Hz]",
-            "y_frequency": "Y frequency [Hz]",
+            "x_frequency": "X frequency [rad/s]",
+            "y_frequency": "Y frequency [rad/s]",
             "x_phase": "X phase [rad]",
             "y_phase": "Y phase [rad]",
         }
@@ -528,10 +534,10 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         tuning_box = QtWidgets.QGroupBox("Tuning")
         tuning_layout = QtWidgets.QFormLayout(tuning_box)
         tuning_labels = {
-            "velocity_p": "Velocity P",
-            "velocity_i": "Velocity I",
-            "angle_p": "Angle P",
-            "angle_i": "Angle I",
+            "velocity_p_x": "Velocity P (X)",
+            "velocity_i_x": "Velocity I (X)",
+            "angle_p_x": "Angle P (X)",
+            "angle_i_x": "Angle I (X)",
             "velocity_lpf_tau": "Velocity LPF τ [s]",
         }
         for field, cmd in TUNING_FIELDS:
@@ -739,13 +745,32 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
     def _on_control_thread(self, timestamp: float, packet: tuple) -> None:
         self.history.append(timestamp, packet)
+        reached = bool(packet[_CONTROL_REACHED_P2P])
+        if reached != self._reached_p2p:
+            self._reached_p2p = reached
+            QtCore.QMetaObject.invokeMethod(
+                self,
+                "_update_p2p_reached_label",
+                QtCore.Qt.ConnectionType.QueuedConnection,
+            )
 
     def _on_status_thread(self, packet: tuple) -> None:
         self.status_received.emit(packet)
 
+    @QtCore.Slot()
+    def _update_p2p_reached_label(self) -> None:
+        reached = self._reached_p2p
+        self.p2p_reached_label.setText(
+            f"P2P target reached: {'yes' if reached else 'no'}"
+        )
+        self.p2p_reached_label.setStyleSheet(
+            "color: #55ff55;" if reached else "color: #ffcc66;"
+        )
+
     def _on_status_ui(self, packet: tuple) -> None:
         (
             _header,
+            _len,
             enabled_raw,
             scan_mode,
             dynamic_routine,
@@ -769,7 +794,10 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
         self._scan_mode = scan_mode
         self._dynamic_routine = dynamic_routine
-        self._has_fault = bool(has_fault_raw)
+        has_fault = bool(has_fault_raw)
+        if has_fault and not self._has_fault and self.reader is not None:
+            self.reader.write_command(GET_ERROR_MSG_CMD)
+        self._has_fault = has_fault
         self.scan_mode_label.setText(
             f"Scan mode: {SCAN_MODE_NAMES.get(scan_mode, f'Unknown ({scan_mode})')}"
         )

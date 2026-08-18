@@ -33,6 +33,8 @@ void LDM::disable() {
     detachInterrupt(digitalPinToInterrupt(MODE_PIN));
     ldmInstance = nullptr;
     enabled = false;
+    dataReady = false;
+    Debug::msg("LDM DISABLED");
 }
 
 void LDM::onMeasurementReady() {

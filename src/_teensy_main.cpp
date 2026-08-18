@@ -47,7 +47,7 @@ SystemManager systemManager(
     sensorX, sensorY,
     currentSenseX, currentSenseY,
     ldm, pwmDriverX, pwmDriverY,
-    faultManager, stateMachine);
+    faultManager, stateMachine, scanEngine);
 Interface interface(
     stateMachine,
     focControllerX, focControllerY,

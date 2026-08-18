@@ -36,6 +36,8 @@ public:
     void velocity_loop();
     void current_loop();
 
+    void resetRollingMeanErrorFilter() { rollingMeanErrorFilter.reset(); }
+
     float getAngularVelocity() { return angular_velocity; }
     float getMechanicalAngle() { return mechanical_angle; }
     float getElectricalAngle() { return electrical_angle; }

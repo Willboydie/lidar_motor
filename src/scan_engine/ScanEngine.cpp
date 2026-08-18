@@ -36,9 +36,18 @@ void ScanEngine::beginCoarseScanning() {
         Debug::msg("Enable ScanEngine to begin coarse scanning.");
         return;
     }
-    dynamicRoutine = DynamicRoutine::SEEKING_COARSE_START;
+    
+    if (!coarseScan.xCentreWithinLimits(focControllerX.getMechanicalAngle()) || !coarseScan.yCentreWithinLimits(focControllerY.getMechanicalAngle())) {
+        Debug::msg("Coarse scan centre outwith bounds.");
+        return;
+    } 
+
+    establishAsPoint2PointBase();
     coarseScan.resetTime();
-    hit = true;
+    hit = false;
+    scanMode = ScanMode::COARSE;
+    dynamicRoutine = DynamicRoutine::WINDING_UP_TO_COARSE;
+    Debug::msg("Beginning coarse windup.");
 }
 
 void ScanEngine::stopCoarseScanning() {
@@ -67,9 +76,9 @@ void ScanEngine::stopPoint2PointScanning() {
 }
 
 
-
 // ------------------- Position and Velocity Updates --------------------------
 void ScanEngine::updatePosition(float dt) {
+    if (!enabled) return;
     dynamicRoutineUpdate();
 
     switch (scanMode) {
@@ -80,6 +89,9 @@ void ScanEngine::updatePosition(float dt) {
         case ScanMode::POINT2POINT:
             sCurveX.updatePosition(dt, dx);
             sCurveY.updatePosition(dt, dy);
+            if (sCurveX.movementFinished() && sCurveY.movementFinished()) {
+                hit = atTarget();
+            }
             break;
         case ScanMode::OFF:
             break;
@@ -89,6 +101,7 @@ void ScanEngine::updatePosition(float dt) {
 }
 
 void ScanEngine::updateVelocity(float dt) {
+    if (!enabled) return;
     switch (scanMode) {
         case ScanMode::COARSE:
             coarseScan.updateXVelocity(dilationTerm * dt, velocityX);
@@ -105,7 +118,6 @@ void ScanEngine::updateVelocity(float dt) {
     focControllerY.setApproachVelocity(velocityY);
 }
 
-
 // ------------------- Dynamic Routine Management --------------------------------
 void ScanEngine::dynamicRoutineUpdate() {
     switch (dynamicRoutine) {
@@ -120,14 +132,6 @@ void ScanEngine::dynamicRoutineUpdate() {
                 dynamicRoutine = DynamicRoutine::NONE;
                 scanMode = ScanMode::OFF;
                 establishAsPoint2PointBase();
-            });
-            break;
-
-        case DynamicRoutine::SEEKING_COARSE_START:
-            moveToNeutralThenDo([this]() {
-                scanMode = ScanMode::COARSE;
-                dynamicRoutine = DynamicRoutine::WINDING_UP_TO_COARSE;
-                Debug::msg("Beginning coarse windup.");
             });
             break;
 
@@ -157,6 +161,7 @@ void ScanEngine::dynamicRoutineUpdate() {
 template <typename T>
 void ScanEngine::moveToNeutralThenDo(T&& _proceedingTask) {
     if (!seekingNeutral) {
+        scanMode = ScanMode::POINT2POINT;
         setNewPoint2PointTarget(neutralX, neutralY);
         seekingNeutral = true;
         atNeutral = false;
@@ -195,6 +200,10 @@ void ScanEngine::windUpToCoarse() {
 
 // -------------------- Control Setters --------------------------
 void ScanEngine::setNewPoint2PointTarget(float _angleX, float _angleY) {
+    if (scanMode != ScanMode::POINT2POINT) {
+        Debug::msg("Cannot set point2point target when not in point2point mode.");
+        return;
+    }
     if (!isWithinXAngleLimits(_angleX) || !isWithinYAngleLimits(_angleY)) {
         Debug::msg("Point2Point target outwith bounds.");
         return;
@@ -208,6 +217,8 @@ void ScanEngine::setNewPoint2PointTarget(float _angleX, float _angleY) {
     sCurveX.setNewDisplacement(Dx);
     sCurveY.setNewDisplacement(Dy);
     hit = false;
+    focControllerX.resetRollingMeanErrorFilter();
+    focControllerY.resetRollingMeanErrorFilter();
 }
 
 void ScanEngine::updateCoarseScanCentre(float _centreX, float _centreY) {
@@ -226,16 +237,16 @@ void ScanEngine::updateCoarseScanCentre(float _centreX, float _centreY) {
 void ScanEngine::establishAsPoint2PointBase() {
     baseAngleX = focControllerX.getMechanicalAngle();
     baseAngleY = focControllerY.getMechanicalAngle();
+    dx = 0.0f;
+    dy = 0.0f;
     sCurveX.setTimeToEnd();
     sCurveY.setTimeToEnd();
-    hit = true;
 }
-
 
 // -------------------- hit test -------------------------------
 bool ScanEngine::atTarget() {
-    bool xHit = focControllerX.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
-    bool yHit = focControllerY.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
-    hit = xHit && yHit;
-    return hit;
+    bool xHit, yHit;
+    xHit = focControllerX.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
+    yHit = focControllerY.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
+    return xHit && yHit;
 }

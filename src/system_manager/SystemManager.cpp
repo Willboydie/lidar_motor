@@ -11,7 +11,8 @@ SystemManager::SystemManager(
     PWMDriver& _pwmDriverX,
     PWMDriver& _pwmDriverY,
     FaultManager& _faultManager,
-    StateMachine& _stateMachine
+    StateMachine& _stateMachine,
+    ScanEngine& _scanEngine
 )
 : focControllerX(_focControllerX)
 , focControllerY(_focControllerY)
@@ -24,6 +25,7 @@ SystemManager::SystemManager(
 , pwmDriverY(_pwmDriverY)
 , faultManager(_faultManager)
 , stateMachine(_stateMachine)
+, scanEngine(_scanEngine)
 {}
 
 void SystemManager::init() {
@@ -90,6 +92,7 @@ void SystemManager::enable() {
     sensorX.enable();
     sensorY.enable();
     ldm.enable();
+    scanEngine.enable();
     stateMachine.enabled = true;
     enabled = true;
 }
@@ -101,6 +104,7 @@ void SystemManager::disable() {
     sensorX.disable();
     sensorY.disable();
     ldm.disable();
+    scanEngine.disable();
     stateMachine.enabled = false;
     enabled = false;
 }

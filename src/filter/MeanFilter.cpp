@@ -15,9 +15,20 @@ int32_t MeanFilter::operator()(int32_t reading) {
     return (int_sum + window_size / 2) / window_size;
 }
 
+
 float MeanFilter::operator()(float reading) {
     float_sum += reading - float_buffer[head];
     float_buffer[head] = reading;
     head = (head + 1) % window_size;
     return float_sum * one_over_window_size;
+}
+
+void MeanFilter::reset() {
+    int_sum = 0;
+    float_sum = 0.0f;
+    head = 0;
+    for (uint16_t i = 0; i < window_size; i++) {
+        int_buffer[i] = 0;
+        float_buffer[i] = 0.0f;
+    }
 }

@@ -15,10 +15,9 @@ enum class DynamicRoutine {
     NONE = 0,
     ENABLING = 1,
     DISABLING = 2,
-    SEEKING_COARSE_START = 3,
-    WINDING_UP_TO_COARSE = 4,
-    TAPERING_DOWN_FROM_COARSE = 5,
-    SEEKING_POINT2POINT_START = 6,
+    WINDING_UP_TO_COARSE = 3,
+    TAPERING_DOWN_FROM_COARSE = 4,
+    SEEKING_POINT2POINT_START = 5,
 };
 
 class ScanEngine {
@@ -29,6 +28,8 @@ public:
 
     void on();
     void off();
+    void enable() { enabled = true; }
+    void disable() { enabled = false; }
     void beginCoarseScanning();
     void stopCoarseScanning();
     void beginPoint2PointScanning();
@@ -58,6 +59,7 @@ private:
 
     bool atNeutral = false;
     bool seekingNeutral = false;
+    bool enabled = false;
 
     void dynamicRoutineUpdate();
 

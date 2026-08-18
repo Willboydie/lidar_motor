@@ -34,7 +34,7 @@ struct ControlPacket {
     float mechanical_angle_y;
     float associated_angle_x;   // LDM sample-time angle [rad] (AngleTracker)
     float associated_angle_y;
-    bool reached_p2p_target;
+    uint8_t reached_p2p_target;
 };
 
 struct StatusPacket {

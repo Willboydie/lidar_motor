@@ -58,6 +58,7 @@
 // Outgoing binary packet headers (distinct from each other and from command bytes)
 #define CONTROL_PACKET_HEADER 0b01010101  // 0x55 — hot-path closed-loop telemetry
 #define STATUS_PACKET_HEADER  0b10101010  // 0xAA — housekeeping / tuning telemetry
+#define DEBUG_PACKET_HEADER   0b11111111  // 0xFF — debug ASCII text
 
 
 #endif
