@@ -14,6 +14,7 @@ the cable: a PC, an SBC, or another MCU acting as system controller.
 | Scan engine states / behaviour | [`src/scan_engine/ScanEngine.hpp`](../src/scan_engine/ScanEngine.hpp) / [`ScanEngine.cpp`](../src/scan_engine/ScanEngine.cpp) |
 | Fault codes and error text | [`src/fault_manager/FaultManager.hpp`](../src/fault_manager/FaultManager.hpp) / [`FaultManager.cpp`](../src/fault_manager/FaultManager.cpp) |
 | Enable / sleep / bootloader | [`src/system_manager/SystemManager.cpp`](../src/system_manager/SystemManager.cpp) |
+| Production loop (Teensy) | [`src/_teensy_main.cpp`](../src/_teensy_main.cpp) |
 | Baud, rates, limits, defaults | [`src/utils/constants.h`](../src/utils/constants.h), [`src/utils/tweakable_params.h`](../src/utils/tweakable_params.h) |
 
 ---
@@ -37,7 +38,7 @@ parameters, and consume the telemetry stream (angles + distance) to build point 
 ```
 host                                     device
  │  open serial 460800 8N1                 │
- │ ───────────────────────────────────────▶│  boots, calibrates (motors twitch)
+ │ ───────────────────────────────────────▶│  boots (disabled; ScanEngine off)
  │  [optional] RECONFIGURE_LDM (disabled)  │
  │  [optional] tune PID / LPF / scan params│
  │  DISABLE_ENABLE  (toggle → enabled)     │
@@ -48,9 +49,9 @@ host                                     device
  │        …repeat per waypoint…            │
  │                                         │
  │  ── or coarse scan ──                   │
- │  BEGIN_COARSE_SCANNING                  │  seeks neutral, winds up Lissajous
+ │  BEGIN_COARSE_SCANNING                  │  seeks neutral, then Lissajous
  │  UPDATE_COARSE_SCAN_CENTRE (x, y)       │  steer the pattern while scanning
- │  STOP_COARSE_SCANNING                   │  tapers down, back to point-to-point
+ │  STOP_COARSE_SCANNING                   │  tapers, then seeks neutral (P2P)
  │                                         │
  │ ◀─────────────  telemetry  ──────────── │  0x55 control packets @ 1 kHz
  │ ◀────────────────────────────────────── │  0xAA status packets  @ 10 Hz
@@ -65,7 +66,7 @@ host                                     device
 
 | Parameter | Value |
 |-----------|-------|
-| Medium | USB CDC serial (Teensy 4.1 or STM32G4 Nucleo) |
+| Medium | USB CDC serial. Production host-protocol image is **Teensy 4.1** (`src/_teensy_main.cpp`). The STM32G4 PlatformIO env currently runs stage bench tests, not this protocol. |
 | Baud | **460800** (`BAUD_RATE`; USB CDC largely ignores it, set it anyway) |
 | Framing | 8 data bits, no parity, 1 stop bit (8N1) |
 | Endianness | **Little-endian** for all multi-byte fields |
@@ -78,11 +79,13 @@ One port carries everything, in both directions:
   (§7), and fault text (§8) interleaved on the same stream. The host receiver must
   resync on packet headers and tolerate ASCII lines between packets (§9).
 
-**Boot behaviour:** at power-up the firmware waits up to 3 s for the serial port, then
-initialises all subsystems and runs FOC calibration — **the motors move during boot**.
-The system comes up **disabled**, in **ANGLE** control mode, with the ScanEngine
-**off** and debug output **off**. Telemetry starts streaming as soon as the main loop
-runs, whether or not the system is enabled.
+**Boot behaviour:** at power-up the firmware waits up to 3 s for the serial port
+(`while (!Serial && millis() < 3000)`), delays 200 ms, then initialises subsystems.
+`FOCController::calibrate()` is currently a no-op — there is no FOC alignment twitch.
+PWM init does assert the driver EN pin, so the half-bridges are not fully inert before
+the host enables. The system comes up **disabled**, in **ANGLE** control mode, with the
+ScanEngine **off** and debug output **off**. Both telemetry streams start as soon as
+`loop()` runs, whether or not the system is enabled.
 
 ---
 
@@ -110,15 +113,26 @@ Write each frame in a single transfer where possible — the parser is a byte-wi
 machine, and a partial frame followed by a disconnect leaves it mid-frame until the
 remaining bytes arrive.
 
-Example — set the X target to 3.6 rad (`TARGET_X_SET` = `0x19`, one float, len = 4):
+Example — one-float command `TARGET_X_SET` (`0x19`) with payload 3.6 (framing only;
+this command is not a usable motion interface, §10.2):
 
 ```
 19 04 00 66 66 66 40
 ```
 
-Outgoing telemetry uses the same prefix: `[header : uint8] [len : uint16 LE] [payload]`.
-The `len` field is `CONTROL_PACKET_LEN` (29) or `STATUS_PACKET_LEN` (21) from
-[`constants.h`](../src/utils/constants.h). Payload layouts are in §5 and §6.
+Outgoing telemetry uses the same 3-byte prefix: `[header : uint8] [len : uint16 LE] …`.
+The firmware writes the packed struct with `Serial.write(..., sizeof(packet))` and
+stores these constants in `len`:
+
+| Packet | Header | `len` field (`constants.h`) | Bytes on the wire (`sizeof`) |
+|--------|--------|-----------------------------|------------------------------|
+| Control | `0x55` | `CONTROL_PACKET_LEN` = **29** | **30** |
+| Status | `0xAA` | `STATUS_PACKET_LEN` = **21** | **24** |
+
+`STATUS_PACKET_LEN` is the payload after the 3-byte prefix (21 = 24 − 3).
+`CONTROL_PACKET_LEN` is **not** — the control payload after the prefix is 27 bytes,
+but the field is still written as 29. Size frames from the known packed sizes
+(§9), not as `3 + len`. Layouts are in §5 and §6.
 
 ---
 
@@ -151,18 +165,19 @@ against these limits on the device; out-of-range requests are **silently ignored
 ## 5. Control packet (`0x55`, 30 bytes, 1 kHz)
 
 The high-rate closed-loop stream (`CONTROL_PACKET_PERIOD_US` = 1000 µs). Packed
-`#pragma pack(1)` as written by `Interface::sendControlPacket()`:
+`#pragma pack(1)` as written by `Interface::sendControlPacket()`. The device
+writes all **30** bytes of `ControlPacket`; do not wait for `3 + len` bytes.
 
 ```
-[header : uint8] [len : uint16 LE] [payload]
+[header : uint8] [len : uint16 LE] [rest of packed struct]
 ```
 
-`len` is `CONTROL_PACKET_LEN` (29). The payload that follows is the fields below.
+`len` is written as `CONTROL_PACKET_LEN` (29). The packed fields are:
 
 | Offset | Type | Field | Notes |
 |--------|------|-------|-------|
 | 0 | `uint8` | `header` | `0x55` |
-| 1 | `uint16` | `len` | `CONTROL_PACKET_LEN` = 29 |
+| 1 | `uint16` | `len` | `CONTROL_PACKET_LEN` = 29 (see §3 — not `sizeof − 3`) |
 | 3 | `float32` | `target_angle_x` | current commanded X angle [rad] |
 | 7 | `float32` | `target_angle_y` | current commanded Y angle [rad] |
 | 11 | `uint16` | `distance` | latest LDM range [cm] |
@@ -170,27 +185,34 @@ The high-rate closed-loop stream (`CONTROL_PACKET_PERIOD_US` = 1000 µs). Packed
 | 17 | `float32` | `mechanical_angle_y` | live Y rotor angle [rad] |
 | 21 | `float32` | `associated_angle_x` | X angle at the last LDM sample time [rad] |
 | 25 | `float32` | `associated_angle_y` | Y angle at the last LDM sample time [rad] |
-| 29 | `uint8` | `reached_p2p_target` | 1 when the ScanEngine reports the current point-to-point target reached (`ScanEngine::getReachedP2PTarget()`); 0 otherwise |
+| 29 | `uint8` | `reached_p2p_target` | packed `bool`: 1 when `ScanEngine::getReachedP2PTarget()` is true; 0 otherwise |
 
 ```python
 CONTROL_STRUCT = struct.Struct("<BHffHffffB")   # 30 bytes, header 0x55
 ```
 
 - **Point clouds:** use `(distance, associated_angle_x, associated_angle_y)`. The
-  associated angles are the AngleTracker's median-filtered estimate of where the
-  gimbal was pointing when that specific range sample was taken — do **not** pair
-  `distance` with the live `mechanical_angle_*` values.
+  associated angles are the AngleTracker's estimate of where the gimbal was pointing
+  when that range sample was taken: a windowed average of rotor-angle samples
+  centred on the midpoint of the interval since the previous LDM reading — do
+  **not** pair `distance` with the live `mechanical_angle_*` values.
 - Between LDM samples, `distance` and the associated angles hold their last values;
   the LDM sample rate is well below 1 kHz, so consecutive control packets repeat them.
   De-duplicate on change if you only want fresh range samples.
-- `target_angle_*` is whatever is currently driving the FOC loops — the ScanEngine
-  overwrites it continuously while it is on.
-- `reached_p2p_target` is a packed 1-byte boolean. It is cleared (`0`) when a new
-  point-to-point target is accepted (`SET_POINT2POINT_TARGET`). It becomes `1` when
-  both axes' rolling angular error are within `TARGET_ANGLE_TOLERANCE` (0.01 rad),
-  and is also forced `1` when the engine treats the pose as settled (end of a
-  coarse taper, disable, or begin-coarse). Wait on this flag before issuing the
-  next waypoint rather than inferring arrival from `mechanical_angle_*`.
+- `target_angle_*` is `FOCController::getTargetAngle()`. The production loop calls
+  `ScanEngine::updatePosition()` every angle-loop tick (~1 kHz) **regardless of
+  `scan_mode`**, and that function always writes both FOC angle targets
+  (`baseAngle + dx`). Direct `TARGET_X_SET` / `TARGET_Y_SET` commands are overwritten
+  within one tick (§10.2).
+- `reached_p2p_target` is a packed 1-byte boolean (`bool` in the struct). It starts
+  **true** at boot. It is cleared (`0`) when a new point-to-point target is accepted
+  (`SET_POINT2POINT_TARGET`, or any internal `setNewPoint2PointTarget`, including
+  the move-to-neutral helpers). It becomes `1` when both axes' rolling angular
+  error are within `TARGET_ANGLE_TOLERANCE` (0.01 rad). It is also forced `1` by
+  `BEGIN_COARSE_SCANNING` (immediately) and by `establishAsPoint2PointBase()` (end
+  of a coarse taper, or disable completing at neutral). Wait on this flag before
+  issuing the next **waypoint**; it is not a coarse-pattern-complete flag (it sits
+  at `1` for most of a coarse scan).
 
 ---
 
@@ -200,14 +222,15 @@ Low-rate housekeeping (`STATUS_PACKET_PERIOD_MS` = 100 ms). This is the host's v
 of the device state machine — since commands are unacknowledged toggles, always
 confirm state transitions here.
 
-Same length-prefixed framing as the control packet. Packed `#pragma pack(1)` as
-written by `Interface::sendStatusPacket()`:
+Same length-prefixed prefix as the control packet. Packed `#pragma pack(1)` as
+written by `Interface::sendStatusPacket()`. The device writes all **24** bytes of
+`StatusPacket`. Here `len` *does* equal the payload after the prefix (21 = 24 − 3).
 
 ```
-[header : uint8] [len : uint16 LE] [payload]
+[header : uint8] [len : uint16 LE] [rest of packed struct]
 ```
 
-`len` is `STATUS_PACKET_LEN` (21). The payload that follows is the fields below.
+`len` is `STATUS_PACKET_LEN` (21). The packed fields are:
 
 | Offset | Type | Field | Values |
 |--------|------|-------|--------|
@@ -223,23 +246,26 @@ written by `Interface::sendStatusPacket()`:
 | 16 | `float32` | `p2p_target_x` | current point-to-point target X [rad] |
 | 20 | `float32` | `p2p_target_y` | current point-to-point target Y [rad] |
 
+Control mode (ANGLE / VELOCITY) is **not** in this packet.
+
 ```python
 STATUS_STRUCT = struct.Struct("<BHBBBBBffff")   # 24 bytes, header 0xAA
 ```
 
 **`dynamic_routine`** reports the transition the ScanEngine is currently executing
 (`DynamicRoutine` in `ScanEngine.hpp`). The engine is settled and ready for the next
-command when this reads `NONE`:
+command when this reads `NONE`. Every non-`NONE` routine that "seeks start" moves
+to the **neutral pose**, not to the current position:
 
 | Value | Name | Meaning |
 |-------|------|---------|
 | 0 | `NONE` | steady state |
 | 1 | `ENABLING` | moving to neutral after `ENABLE_SCANENGINE` |
-| 2 | `DISABLING` | moving to neutral before switching off |
-| 3 | `SEEKING_COARSE_START` | moving to neutral before a coarse scan |
-| 4 | `WINDING_UP_TO_COARSE` | ramping the Lissajous pattern up to full speed |
-| 5 | `TAPERING_DOWN_FROM_COARSE` | ramping the pattern down after a stop request |
-| 6 | `SEEKING_POINT2POINT_START` | settling into point-to-point mode |
+| 2 | `DISABLING` | moving to neutral; `scan_mode` is POINT2POINT until arrival, then OFF |
+| 3 | `SEEKING_COARSE_START` | moving to neutral; `scan_mode` stays at its previous value (usually POINT2POINT) until wind-up begins |
+| 4 | `WINDING_UP_TO_COARSE` | ramping the Lissajous time-dilation toward 1.0; `scan_mode` is now COARSE. Completes in one tick if dilation is already 1.0 (typical on the first coarse scan) |
+| 5 | `TAPERING_DOWN_FROM_COARSE` | ramping dilation down after `STOP_COARSE_SCANNING`; `scan_mode` still COARSE |
+| 6 | `SEEKING_POINT2POINT_START` | moving to **neutral**, then idling in POINT2POINT (`scan_mode = 2`) |
 
 ---
 
@@ -253,10 +279,10 @@ human-readable progress messages into the stream. Each message is:
 ```
 
 The 3-byte prefix (`DEBUG_HEADER` in `Debug.hpp`) is fixed; on seeing `0xFF`, consume
-the two following bytes and then read text up to the newline. Debug messages are the
-only notification for several soft rejections (out-of-bounds targets, amplitude limit
-violations, "enable ScanEngine first", …), so enabling debug mode during integration
-bring-up is strongly recommended.
+the two following bytes and then read text up to the newline. Several soft rejections
+(out-of-bounds targets, amplitude / centre limit violations, "enable ScanEngine first")
+only emit a debug message — enable debug mode during bring-up. Wrong-mode
+`STOP_COARSE_SCANNING` / `STOP_POINT2POINT_SCANNING` are silent even with debug on.
 
 ---
 
@@ -302,28 +328,28 @@ debug messages, and bare fault text. Suggested parse loop:
 
 1. Append received bytes to a buffer.
 2. Inspect the first byte:
-   - `0x55` or `0xAA` → wait until at least 3 bytes are present, then read the
-     little-endian `uint16` length at offset 1. Wait until the full packed frame
-     is in the buffer (**30 bytes** for control, **24 bytes** for status on this
-     firmware), unpack, and optionally check that `len` equals `CONTROL_PACKET_LEN`
-     (29) or `STATUS_PACKET_LEN` (21).
+   - `0x55` or `0xAA` → wait until at least 3 bytes are present. On **this** firmware
+     use the known packed sizes, not `3 + len`: **30 bytes** for control, **24 bytes**
+     for status. (Control `len` is 29, which is not the remaining payload; a host that
+     waits for `3 + len` will over-read and desync.) Optionally check that `len`
+     equals `CONTROL_PACKET_LEN` (29) or `STATUS_PACKET_LEN` (21) as a sanity check
+     after unpacking.
    - `0xFF` → skip the 3-byte debug prefix, then consume a text line to `\n`.
    - anything else → treat as bare text (fault/boot output): consume to `\n`; if no
      newline appears within a reasonable window, drop one byte and retry (resync).
 3. Repeat until the buffer is exhausted.
 
-Do not assume the payload size from the header alone in the long term: the `len`
-field exists so extra payload bytes can be added later. A host that only understands
-the current fields can unpack the known prefix and skip any trailing payload if
-`len` is larger than it expects.
+A later firmware revision may extend the packed structs. Until then, do not size
+control frames as `3 + len`. The Python reference below unpacks the known 30 / 24
+byte layouts.
 
 **Header collision caveat:** telemetry payload floats can legitimately contain the
 bytes `0x55` / `0xAA` / `0xFF`, so after a desync a naive scanner can lock onto a
 false header. There are no checksums; robustness comes from (a) checking `len`
-against the known constants, (b) the steady 1 kHz / 10 Hz cadence, and (c) sanity
-checks on decoded values (angles within 2.5–4.2 / 2.6–3.9 rad, plausible distances).
-Requiring two consecutive size-consistent packets before trusting a resync works
-well in practice.
+against the known constants, (b) requiring the packed size to match 30 / 24, (c) the
+steady 1 kHz / 10 Hz cadence, and (d) sanity checks on decoded values (angles within
+2.5–4.2 / 2.6–3.9 rad, plausible distances). Requiring two consecutive size-consistent
+packets before trusting a resync works well in practice.
 
 ---
 
@@ -338,9 +364,9 @@ Payload floats are little-endian `float32`.
 |----|---------|---------|-----------|
 | `0x01` | `DISABLE_ENABLE` | — | **Toggle** system enable. Enable powers FOC, encoders and LDM; requires successful boot init, else latches `FAULT_SYS_NOT_INITIALISED`. Disable releases the motors. |
 | `0x02` | `SET_DEBUG_MODE` | — | **Toggle** debug text output (§7). |
-| `0x03` | `TOGGLE_CONTROL_MODE` | — | **Toggle** ANGLE ↔ VELOCITY control on both axes. The system boots in ANGLE mode; the ScanEngine assumes ANGLE mode. |
-| `0x1B` | `SLEEP` | — | Disables the drive, then halts the CPU (WFI). |
-| `0x1C` | `WAKE` | — | Restores clocks after sleep. Does **not** re-enable — send `DISABLE_ENABLE` again. |
+| `0x03` | `TOGGLE_CONTROL_MODE` | — | **Toggle** ANGLE ↔ VELOCITY flags on both FOC controllers and the state machine. The system boots in ANGLE. Control mode is **not** reported in the status packet. The production Teensy loop always runs `angle_loop()`, which overwrites `target_velocity` every tick, so VELOCITY mode is not an independent motion interface on this firmware. The ScanEngine always writes angle targets (§10.2). |
+| `0x1B` | `SLEEP` | — | If not initialised, latches `FAULT_SYS_NOT_INITIALISED`. Otherwise disables the drive (if enabled), then halts the CPU (WFI). |
+| `0x1C` | `WAKE` | — | STM32: resumes SysTick. Teensy (production): no-op — WFI already returned with clocks intact. Does **not** re-enable — send `DISABLE_ENABLE` again. |
 | `0x1D` | `RESTART` | — | `SLEEP` followed by `WAKE`. |
 | `0x1E` | `ENTER_BOOTLOADER` | — | Disables the drive and jumps to the MCU bootloader (Teensy reboot / STM32 DFU). The serial link drops. |
 | `0x1F` | `GET_ERROR_MSG` | — | Writes one ASCII line per latched fault, then clears all faults (§8). |
@@ -350,37 +376,39 @@ no acknowledgement, drive them state-aware: check `enabled` / `debug_mode` in th
 status packet and only send the toggle if the current state differs from the desired
 one.
 
-### 10.2 Direct motion targets (ScanEngine off)
+### 10.2 Direct motion targets
 
 | ID | Command | Payload | Behaviour |
 |----|---------|---------|-----------|
-| `0x19` | `TARGET_X_SET` | 1 float | ANGLE mode: X target angle [rad]. VELOCITY mode: X target velocity [rad/s]. |
+| `0x19` | `TARGET_X_SET` | 1 float | ANGLE mode: writes X `target_angle` [rad]. VELOCITY mode: writes X `target_velocity` [rad/s]. Not range-checked. |
 | `0x1A` | `TARGET_Y_SET` | 1 float | Same for Y. |
 
-These write the FOC setpoints directly and are **not** range-checked against the
-travel limits. While the ScanEngine is on it rewrites the targets every millisecond,
-so direct targets are only meaningful with the ScanEngine off. Prefer the ScanEngine
-point-to-point interface for normal operation — it adds S-curve profiling and limit
-checks.
+These are **not** a usable motion interface on the production firmware. The Teensy
+loop calls `ScanEngine::updatePosition()` every angle-loop tick even when
+`scan_mode = OFF`, and that function always executes `setTargetAngle(baseAngle + dx)`
+on both axes (initial `baseAngle` is the neutral pose, `dx = 0`). An ANGLE-mode
+`TARGET_*_SET` is overwritten within ~1 ms. Prefer `SET_POINT2POINT_TARGET` with the
+ScanEngine on.
 
 ### 10.3 ScanEngine
 
 | ID | Command | Payload | Behaviour |
 |----|---------|---------|-----------|
-| `0x21` | `ENABLE_SCANENGINE` | — | Turns the engine on: moves to the neutral pose, then idles in POINT2POINT mode. No-op if already on. |
-| `0x22` | `DISABLE_SCANENGINE` | — | Returns to neutral, then sets `scan_mode = OFF`. |
-| `0x2B` | `BEGIN_POINT2POINT_SCANNING` | — | Switches to POINT2POINT mode (from coarse) and settles. Rejected (debug msg only) if the engine is off. |
-| `0x2D` | `SET_POINT2POINT_TARGET` | 2 floats (X, Y) [rad] | S-curve move to the absolute target. Silently ignored if either coordinate is outside the travel limits (§4). Clears `reached_p2p_target`. Issue the next target after `reached_p2p_target` is `1` in the control packet. |
-| `0x2C` | `STOP_POINT2POINT_SCANNING` | — | Settles at the current position. |
-| `0x23` | `BEGIN_COARSE_SCANNING` | — | Moves to neutral, then winds the Lissajous pattern up to full amplitude (`dynamic_routine` 3 → 4 → 0). Rejected if the engine is off. |
-| `0x2E` | `UPDATE_COARSE_SCAN_CENTRE` | 2 floats (X, Y) [rad] | Re-centres the running pattern. Only valid in COARSE mode; rejected if `centre ± amplitude` would leave the travel limits. |
-| `0x2A` | `STOP_COARSE_SCANNING` | — | Tapers the pattern down, then returns to POINT2POINT mode. |
+| `0x21` | `ENABLE_SCANENGINE` | — | If already on, debug "already on" and return. Otherwise sets `scan_mode = POINT2POINT` immediately and `dynamic_routine = ENABLING`, then S-curves to the neutral pose. |
+| `0x22` | `DISABLE_SCANENGINE` | — | If already off, debug "already off" and return. Otherwise sets `scan_mode = POINT2POINT` immediately (no coarse taper) and `dynamic_routine = DISABLING`, S-curves to neutral, then `scan_mode = OFF`. |
+| `0x2B` | `BEGIN_POINT2POINT_SCANNING` | — | Rejected (debug msg only) if the engine is off. Otherwise sets `scan_mode = POINT2POINT` immediately (no coarse taper) and `dynamic_routine = SEEKING_POINT2POINT_START`, which **moves to neutral**. |
+| `0x2D` | `SET_POINT2POINT_TARGET` | 2 floats (X, Y) [rad] | If either coordinate is outside the travel limits (§4), ignored (debug msg). Otherwise rebases from the current mechanical angles, starts an S-curve to the absolute target, and clears `reached_p2p_target`. The S-curve is followed only while `scan_mode = POINT2POINT`; the rebase still updates `baseAngle` (the coarse centre) if issued in COARSE. No engine-on check. Issue the next waypoint after `reached_p2p_target` is `1`. |
+| `0x2C` | `STOP_POINT2POINT_SCANNING` | — | No-op (silent) if not in POINT2POINT. Otherwise `SEEKING_POINT2POINT_START`: **moves to neutral**, then idles. |
+| `0x23` | `BEGIN_COARSE_SCANNING` | — | Rejected (debug msg only) if the engine is off. Otherwise `SEEKING_COARSE_START`, resets Lissajous time, forces `reached_p2p_target = 1`. Moves to neutral, then `WINDING_UP_TO_COARSE`. Dilation is not reset: if it is already 1.0 (boot / no prior taper), wind-up completes on the first tick and status @ 10 Hz may skip routine 4. |
+| `0x2E` | `UPDATE_COARSE_SCAN_CENTRE` | 2 floats (X, Y) [rad] | Only valid in COARSE mode (otherwise debug reject). Rejected if `centre ± amplitude` would leave the travel limits. |
+| `0x2A` | `STOP_COARSE_SCANNING` | — | No-op (silent) if not in COARSE. Otherwise tapers dilation (`dynamic_routine` 5), then switches to POINT2POINT and **seeks neutral** (routine 6). |
 
 ### 10.4 Coarse-scan pattern parameters
 
 The coarse pattern is a Lissajous figure: `offset = amplitude · sin(ω·t + phase)` per
 axis, superimposed on the scan centre. Parameters may be set at any time; they take
-effect immediately (defaults: ω_x = 1.5, ω_y = 3.0 rad/s, amplitude 0.2 rad, phase 0).
+effect on the next ScanEngine position tick (defaults: ω_x = 1.5, ω_y = 3.0 rad/s,
+amplitude 0.2 rad, phase 0). Frequency and phase are not range-checked.
 
 | ID | Command | Payload | Constraint |
 |----|---------|---------|-----------|
@@ -456,11 +484,15 @@ Garmin V3HP presets (`GarminV3HP::configure()`):
 2. Optionally set amplitudes / frequencies / phases (§10.4) — choose amplitudes so
    that `centre ± amplitude` stays inside the travel limits, or later centre updates
    will be rejected.
-3. Send `BEGIN_COARSE_SCANNING`. Watch `dynamic_routine`: 3 (seeking start) → 4
-   (winding up) → 0 (full pattern). Log point-cloud tuples throughout.
+3. Send `BEGIN_COARSE_SCANNING`. Watch `dynamic_routine`: 3 (seeking start; `scan_mode`
+   still POINT2POINT) → 4 (winding up; `scan_mode` = COARSE) → 0 (full pattern).
+   Routine 4 may last one tick on the first coarse scan (dilation starts at 1.0) and
+   can be missed at 10 Hz. Log point-cloud tuples throughout.
 4. To steer the sweep, send `UPDATE_COARSE_SCAN_CENTRE (x, y)` at any time while in
    COARSE mode.
-5. Send `STOP_COARSE_SCANNING` to ramp down (routine 5, then POINT2POINT mode).
+5. Send `STOP_COARSE_SCANNING`. Watch `dynamic_routine`: 5 (taper, still COARSE) →
+   6 (seek neutral in POINT2POINT) → 0. The gimbal ends at the neutral pose, not at
+   the last Lissajous point.
 
 ### 11.3 Python reference implementation
 
@@ -482,8 +514,8 @@ CMD = {
     "SET_POINT2POINT_TARGET": 0x2D, "UPDATE_COARSE_SCAN_CENTRE": 0x2E,
 }
 
-CONTROL = struct.Struct("<BHffHffffB")  # 30 B, header 0x55, then uint16 len
-STATUS  = struct.Struct("<BHBBBBBffff") # 24 B, header 0xAA, then uint16 len
+CONTROL = struct.Struct("<BHffHffffB")  # 30 B packed ControlPacket; do not use 3+len
+STATUS  = struct.Struct("<BHBBBBBffff") # 24 B packed StatusPacket
 DEBUG_PREFIX = b"\xff\x04\x06"
 
 def send(ser: serial.Serial, name: str, *args: float) -> None:
@@ -545,19 +577,29 @@ for kind, data in packets(ser):
 
 - **Toggles, not setters.** `DISABLE_ENABLE`, `SET_DEBUG_MODE` and
   `TOGGLE_CONTROL_MODE` flip state. Always reconcile against the status packet
-  rather than assuming.
+  (`enabled` / `debug_mode`) rather than assuming. Control mode is not in the
+  status packet; on this firmware VELOCITY mode does not skip the angle loop.
 - **No ACKs.** Verify every state-changing command through the `0xAA` stream; poll
   `GET_ERROR_MSG` when `has_fault` is set.
 - **Silent rejection of bad targets.** Out-of-limit point-to-point targets, coarse
   centres and amplitudes are dropped without a fault. Enable debug mode during
-  bring-up to see the rejection messages.
+  bring-up to see the rejection messages. Wrong-mode stop commands are silent even
+  with debug on.
 - **Angles are absolute rotor angles.** Work relative to the neutral pose
   (3.54, 3.39 rad) and stay inside X 2.5–4.2 / Y 2.6–3.9 rad.
-- **Motors move at boot** (FOC calibration) — do not assume the gimbal is passive
-  before you have sent anything.
+- **PWM EN is asserted at boot** (driver `generic_init`); `calibrate()` is a no-op.
+  FOC loops do not run until `DISABLE_ENABLE`. The half-bridges are not fully inert.
+- **ScanEngine always writes FOC angle targets**, including when `scan_mode = OFF`.
+  Do not use `TARGET_X_SET` / `TARGET_Y_SET` for motion on the production loop.
+- **P2P start is always neutral.** `BEGIN_POINT2POINT_SCANNING`,
+  `STOP_POINT2POINT_SCANNING`, and the end of `STOP_COARSE_SCANNING` all S-curve to
+  the neutral pose. They do not hold the current position. `DISABLE_SCANENGINE`
+  from COARSE also skips the taper and goes straight to a P2P move to neutral.
 - **Wait for `dynamic_routine = 0`** before issuing the next scan-mode command; the
-  engine ignores or re-purposes commands issued mid-transition. For waypoints, wait
-  for `reached_p2p_target = 1` in the control packet.
+  engine overwrites `dynamic_routine` if you command mid-transition. For waypoints,
+  wait for `reached_p2p_target = 1` in the control packet.
+- **Do not size control frames as `3 + len`.** Packed control packets are 30 bytes
+  with `len = 29`. Status happens to be `3 + 21 = 24`. Use the known packed sizes.
 - **LDM reconfiguration requires the disabled state**, so do it before enabling.
 - **Telemetry bandwidth:** 30 B × 1 kHz + 24 B × 10 Hz ≈ 30 kB/s — trivial for USB
   CDC, but poll your OS serial buffer frequently enough to avoid overflow drops,

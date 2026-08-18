@@ -109,7 +109,7 @@
 #define BAUD_RATE 460800
 
 // Packet lengths
-#define CONTROL_PACKET_LEN 29
+#define CONTROL_PACKET_LEN 27
 #define STATUS_PACKET_LEN 21
 
 // Debug
