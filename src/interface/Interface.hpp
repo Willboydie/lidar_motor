@@ -19,6 +19,9 @@
 #include "parser/Parser.hpp"
 #include "io/SerialIO.hpp"
 
+// Packet lengths
+constexpr uint16_t CONTROL_PACKET_LEN = 27;
+constexpr uint16_t STATUS_PACKET_LEN = 21;
 
 #pragma pack(push, 1)
 struct ControlPacket {

@@ -192,7 +192,7 @@ void Interface::sendControlPacket() {
     // Live mechanical angles for the motor-control UI (UI/realtime_plotter.py).
     ControlPacket packet = {
         CONTROL_PACKET_HEADER,
-        static_cast<uint16_t>(CONTROL_PACKET_LEN),
+        CONTROL_PACKET_LEN,
         focControllerX.getTargetAngle(),
         focControllerY.getTargetAngle(),
         ldm.getLatestDistance(),
@@ -208,7 +208,7 @@ void Interface::sendControlPacket() {
 void Interface::sendStatusPacket() {
     StatusPacket packet = {
         STATUS_PACKET_HEADER,
-        static_cast<uint16_t>(STATUS_PACKET_LEN),
+        STATUS_PACKET_LEN,
         static_cast<uint8_t>(stateMachine.enabled),
         static_cast<uint8_t>(scanEngine.getScanMode()),
         static_cast<uint8_t>(scanEngine.getDynamicRoutine()),

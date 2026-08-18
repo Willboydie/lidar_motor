@@ -108,10 +108,6 @@
 // Serial Parameters
 #define BAUD_RATE 460800
 
-// Packet lengths
-#define CONTROL_PACKET_LEN 27
-#define STATUS_PACKET_LEN 21
-
 // Debug
 #define DEFAULT_DEBUG_SETTING false
 
