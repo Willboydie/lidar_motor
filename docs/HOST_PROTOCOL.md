@@ -122,17 +122,15 @@ this command is not a usable motion interface, §10.2):
 
 Outgoing telemetry uses the same 3-byte prefix: `[header : uint8] [len : uint16 LE] …`.
 The firmware writes the packed struct with `Serial.write(..., sizeof(packet))` and
-stores these constants in `len`:
+stores the payload byte count (`sizeof − 3`) in `len`:
 
 | Packet | Header | `len` field (`constants.h`) | Bytes on the wire (`sizeof`) |
 |--------|--------|-----------------------------|------------------------------|
-| Control | `0x55` | `CONTROL_PACKET_LEN` = **29** | **30** |
+| Control | `0x55` | `CONTROL_PACKET_LEN` = **27** | **30** |
 | Status | `0xAA` | `STATUS_PACKET_LEN` = **21** | **24** |
 
-`STATUS_PACKET_LEN` is the payload after the 3-byte prefix (21 = 24 − 3).
-`CONTROL_PACKET_LEN` is **not** — the control payload after the prefix is 27 bytes,
-but the field is still written as 29. Size frames from the known packed sizes
-(§9), not as `3 + len`. Layouts are in §5 and §6.
+Both `len` values equal the payload after the 3-byte prefix, so `3 + len` matches
+the packed size. Layouts are in §5 and §6.
 
 ---
 
@@ -166,18 +164,19 @@ against these limits on the device; out-of-range requests are **silently ignored
 
 The high-rate closed-loop stream (`CONTROL_PACKET_PERIOD_US` = 1000 µs). Packed
 `#pragma pack(1)` as written by `Interface::sendControlPacket()`. The device
-writes all **30** bytes of `ControlPacket`; do not wait for `3 + len` bytes.
+writes all **30** bytes of `ControlPacket`. `len` equals the payload after the
+prefix (27 = 30 − 3).
 
 ```
 [header : uint8] [len : uint16 LE] [rest of packed struct]
 ```
 
-`len` is written as `CONTROL_PACKET_LEN` (29). The packed fields are:
+`len` is written as `CONTROL_PACKET_LEN` (27). The packed fields are:
 
 | Offset | Type | Field | Notes |
 |--------|------|-------|-------|
 | 0 | `uint8` | `header` | `0x55` |
-| 1 | `uint16` | `len` | `CONTROL_PACKET_LEN` = 29 (see §3 — not `sizeof − 3`) |
+| 1 | `uint16` | `len` | `CONTROL_PACKET_LEN` = 27 |
 | 3 | `float32` | `target_angle_x` | current commanded X angle [rad] |
 | 7 | `float32` | `target_angle_y` | current commanded Y angle [rad] |
 | 11 | `uint16` | `distance` | latest LDM range [cm] |
@@ -224,7 +223,7 @@ confirm state transitions here.
 
 Same length-prefixed prefix as the control packet. Packed `#pragma pack(1)` as
 written by `Interface::sendStatusPacket()`. The device writes all **24** bytes of
-`StatusPacket`. Here `len` *does* equal the payload after the prefix (21 = 24 − 3).
+`StatusPacket`. Here `len` equals the payload after the prefix (21 = 24 − 3).
 
 ```
 [header : uint8] [len : uint16 LE] [rest of packed struct]
@@ -328,28 +327,26 @@ debug messages, and bare fault text. Suggested parse loop:
 
 1. Append received bytes to a buffer.
 2. Inspect the first byte:
-   - `0x55` or `0xAA` → wait until at least 3 bytes are present. On **this** firmware
-     use the known packed sizes, not `3 + len`: **30 bytes** for control, **24 bytes**
-     for status. (Control `len` is 29, which is not the remaining payload; a host that
-     waits for `3 + len` will over-read and desync.) Optionally check that `len`
-     equals `CONTROL_PACKET_LEN` (29) or `STATUS_PACKET_LEN` (21) as a sanity check
-     after unpacking.
+   - `0x55` or `0xAA` → wait until at least 3 bytes are present. Read `len` (uint16
+     LE); it is the remaining payload. Wait for `len` more bytes (`3 + len` total).
+     On this firmware that is **30 bytes** for control (`len` = 27) and **24 bytes**
+     for status (`len` = 21). Optionally require those constants as a sanity check
+     after unpacking. A later revision may extend the packed structs — `3 + len`
+     stays correct; hardcoded 30 / 24 would not.
    - `0xFF` → skip the 3-byte debug prefix, then consume a text line to `\n`.
    - anything else → treat as bare text (fault/boot output): consume to `\n`; if no
      newline appears within a reasonable window, drop one byte and retry (resync).
 3. Repeat until the buffer is exhausted.
 
-A later firmware revision may extend the packed structs. Until then, do not size
-control frames as `3 + len`. The Python reference below unpacks the known 30 / 24
-byte layouts.
+The Python reference below unpacks the current 30 / 24 byte layouts (`3 + len`).
 
 **Header collision caveat:** telemetry payload floats can legitimately contain the
 bytes `0x55` / `0xAA` / `0xFF`, so after a desync a naive scanner can lock onto a
 false header. There are no checksums; robustness comes from (a) checking `len`
-against the known constants, (b) requiring the packed size to match 30 / 24, (c) the
-steady 1 kHz / 10 Hz cadence, and (d) sanity checks on decoded values (angles within
-2.5–4.2 / 2.6–3.9 rad, plausible distances). Requiring two consecutive size-consistent
-packets before trusting a resync works well in practice.
+against the known constants (27 / 21), (b) requiring the packed size to match
+`3 + len`, (c) the steady 1 kHz / 10 Hz cadence, and (d) sanity checks on decoded
+values (angles within 2.5–4.2 / 2.6–3.9 rad, plausible distances). Requiring two
+consecutive size-consistent packets before trusting a resync works well in practice.
 
 ---
 
@@ -514,8 +511,8 @@ CMD = {
     "SET_POINT2POINT_TARGET": 0x2D, "UPDATE_COARSE_SCAN_CENTRE": 0x2E,
 }
 
-CONTROL = struct.Struct("<BHffHffffB")  # 30 B packed ControlPacket; do not use 3+len
-STATUS  = struct.Struct("<BHBBBBBffff") # 24 B packed StatusPacket
+CONTROL = struct.Struct("<BHffHffffB")  # 30 B packed ControlPacket (3 + len, len=27)
+STATUS  = struct.Struct("<BHBBBBBffff") # 24 B packed StatusPacket (3 + len, len=21)
 DEBUG_PREFIX = b"\xff\x04\x06"
 
 def send(ser: serial.Serial, name: str, *args: float) -> None:
@@ -598,8 +595,9 @@ for kind, data in packets(ser):
 - **Wait for `dynamic_routine = 0`** before issuing the next scan-mode command; the
   engine overwrites `dynamic_routine` if you command mid-transition. For waypoints,
   wait for `reached_p2p_target = 1` in the control packet.
-- **Do not size control frames as `3 + len`.** Packed control packets are 30 bytes
-  with `len = 29`. Status happens to be `3 + 21 = 24`. Use the known packed sizes.
+- **Telemetry `len` is the payload after the prefix.** Control is 30 bytes with
+  `len = 27`; status is 24 bytes with `len = 21`. `3 + len` matches both packed
+  sizes. A later revision may grow the structs — keep sizing from `3 + len`.
 - **LDM reconfiguration requires the disabled state**, so do it before enabling.
 - **Telemetry bandwidth:** 30 B × 1 kHz + 24 B × 10 Hz ≈ 30 kB/s — trivial for USB
   CDC, but poll your OS serial buffer frequently enough to avoid overflow drops,
