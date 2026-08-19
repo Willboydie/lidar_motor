@@ -1,7 +1,7 @@
 """
 Motor control realtime plotter — Qt dashboard for LiDAR module serial telemetry.
 
-Parses ControlPacket (0x55 @ 1 kHz, 30 B), StatusPacket (0xAA @ 10 Hz, 24 B),
+Parses ControlPacket (0x55 @ 1 kHz, 29 B), StatusPacket (0xAA @ 10 Hz, 24 B),
 and framed Debug messages ([0xFF][len uint16 LE][payload]) per docs/HOST_PROTOCOL.md.
 
 Primary use: XY plot of FOC target angles (target_angle_x vs target_angle_y) —
@@ -15,7 +15,7 @@ Flash production firmware:
     pio run -e teensy41 --target upload
 
 Typical flow:
-    Connect → Enable → Scan Engine Enable → Coarse Begin (or set P2P target)
+    Connect → Enable motors → Scan Engine On → Coarse Begin (or set P2P target)
 
 Usage:
     pip install PySide6 pyqtgraph pyserial
@@ -42,9 +42,9 @@ CONTROL_HEADER = 0x55
 STATUS_HEADER = 0xAA
 DEBUG_HEADER = 0xFF
 PREFIX_SIZE = 3  # [header:1][len:uint16 LE]
-CONTROL_PAYLOAD_LEN = 27  # sizeof(ControlPacket) − 3
+CONTROL_PAYLOAD_LEN = 26  # sizeof(ControlPacket) − 3
 STATUS_PAYLOAD_LEN = 21   # sizeof(StatusPacket) − 3
-CONTROL_STRUCT = struct.Struct("<BHffHffffB")   # 30 B packed ControlPacket
+CONTROL_STRUCT = struct.Struct("<BHffHffff")   # 29 B packed ControlPacket
 STATUS_STRUCT = struct.Struct("<BHBBBBBffff")  # 24 B packed StatusPacket
 
 SCAN_MODE_NAMES = {
@@ -55,12 +55,8 @@ SCAN_MODE_NAMES = {
 
 DYNAMIC_ROUTINE_NAMES = {
     0: "None",
-    1: "Enabling",
-    2: "Disabling",
-    3: "Seeking coarse start",
-    4: "Winding up to coarse",
-    5: "Tapering down from coarse",
-    6: "Seeking point-to-point start",
+    1: "Winding up to coarse",
+    2: "Tapering down from coarse",
 }
 
 DISABLE_ENABLE_CMD = 0x01
@@ -85,10 +81,11 @@ Y_FREQUENCY_SET_CMD = 0x27
 X_PHASE_SET_CMD = 0x28
 Y_PHASE_SET_CMD = 0x29
 STOP_COARSE_SCANNING_CMD = 0x2A
-BEGIN_POINT2POINT_SCANNING_CMD = 0x2B
-STOP_POINT2POINT_SCANNING_CMD = 0x2C
+SCANENGINE_ON_CMD = 0x2B
+SCANENGINE_OFF_CMD = 0x2C
 SET_POINT2POINT_TARGET_CMD = 0x2D
 UPDATE_COARSE_SCAN_CENTRE_CMD = 0x2E
+SEEK_NEUTRAL_CMD = 0x2F
 
 DEFAULT_BAUD = 460800
 N_POINTS = 5 * 250  # points shown at once on the XY plot
@@ -104,12 +101,11 @@ def normalize_angle(angle: float) -> float:
 
 # ControlPacket unpack indices (header + fields):
 # 0 header, 1 len, 2 target_x, 3 target_y, 4 distance,
-# 5 mechanical_x, 6 mechanical_y, 7 associated_x, 8 associated_y, 9 reached_p2p
+# 5 mechanical_x, 6 mechanical_y, 7 associated_x, 8 associated_y
 _CONTROL_TARGET_X = 2
 _CONTROL_TARGET_Y = 3
 _CONTROL_MECH_X = 5
 _CONTROL_MECH_Y = 6
-_CONTROL_REACHED_P2P = 9
 
 TUNING_FIELDS = (
     ("velocity_p_x", VELOCITY_P_X_SET_CMD),
@@ -357,7 +353,6 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self._scan_mode = 0
         self._dynamic_routine = 0
         self._has_fault = False
-        self._reached_p2p = True
         self._rate_last_time = time.monotonic()
         self._rate_last_count = 0
 
@@ -425,12 +420,10 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         self.scan_mode_label = QtWidgets.QLabel("Scan mode: Off")
         self.routine_label = QtWidgets.QLabel("Transition: None")
         self.fault_label = QtWidgets.QLabel("Faults: none")
-        self.p2p_reached_label = QtWidgets.QLabel("P2P target reached: yes")
         state_layout.addWidget(self.enable_btn)
         state_layout.addWidget(self.debug_btn)
         state_layout.addWidget(self.scan_mode_label)
         state_layout.addWidget(self.routine_label)
-        state_layout.addWidget(self.p2p_reached_label)
         state_layout.addWidget(self.fault_label)
         panel.addWidget(state)
 
@@ -445,8 +438,18 @@ class RealtimePlotter(QtWidgets.QMainWindow):
         disable_engine_btn.clicked.connect(
             lambda: self._send_cmd(DISABLE_SCANENGINE_CMD)
         )
+        on_engine_btn = QtWidgets.QPushButton("On")
+        on_engine_btn.clicked.connect(
+            lambda: self._send_cmd(SCANENGINE_ON_CMD)
+        )
+        off_engine_btn = QtWidgets.QPushButton("Off")
+        off_engine_btn.clicked.connect(
+            lambda: self._send_cmd(SCANENGINE_OFF_CMD)
+        )
         engine_row.addWidget(enable_engine_btn)
         engine_row.addWidget(disable_engine_btn)
+        engine_row.addWidget(on_engine_btn)
+        engine_row.addWidget(off_engine_btn)
         scan_layout.addLayout(engine_row)
 
         coarse_box = QtWidgets.QGroupBox("Coarse scan")
@@ -497,18 +500,11 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
         p2p_box = QtWidgets.QGroupBox("Point-to-point")
         p2p_layout = QtWidgets.QFormLayout(p2p_box)
-        p2p_btns = QtWidgets.QHBoxLayout()
-        begin_p2p_btn = QtWidgets.QPushButton("Begin")
-        begin_p2p_btn.clicked.connect(
-            lambda: self._send_cmd(BEGIN_POINT2POINT_SCANNING_CMD)
+        seek_neutral_btn = QtWidgets.QPushButton("Seek Neutral")
+        seek_neutral_btn.clicked.connect(
+            lambda: self._send_cmd(SEEK_NEUTRAL_CMD)
         )
-        stop_p2p_btn = QtWidgets.QPushButton("Stop")
-        stop_p2p_btn.clicked.connect(
-            lambda: self._send_cmd(STOP_POINT2POINT_SCANNING_CMD)
-        )
-        p2p_btns.addWidget(begin_p2p_btn)
-        p2p_btns.addWidget(stop_p2p_btn)
-        p2p_layout.addRow(p2p_btns)
+        p2p_layout.addRow(seek_neutral_btn)
 
         self.p2p_x_spin = QtWidgets.QDoubleSpinBox()
         self.p2p_x_spin.setDecimals(6)
@@ -745,27 +741,9 @@ class RealtimePlotter(QtWidgets.QMainWindow):
 
     def _on_control_thread(self, timestamp: float, packet: tuple) -> None:
         self.history.append(timestamp, packet)
-        reached = bool(packet[_CONTROL_REACHED_P2P])
-        if reached != self._reached_p2p:
-            self._reached_p2p = reached
-            QtCore.QMetaObject.invokeMethod(
-                self,
-                "_update_p2p_reached_label",
-                QtCore.Qt.ConnectionType.QueuedConnection,
-            )
 
     def _on_status_thread(self, packet: tuple) -> None:
         self.status_received.emit(packet)
-
-    @QtCore.Slot()
-    def _update_p2p_reached_label(self) -> None:
-        reached = self._reached_p2p
-        self.p2p_reached_label.setText(
-            f"P2P target reached: {'yes' if reached else 'no'}"
-        )
-        self.p2p_reached_label.setStyleSheet(
-            "color: #55ff55;" if reached else "color: #ffcc66;"
-        )
 
     def _on_status_ui(self, packet: tuple) -> None:
         (

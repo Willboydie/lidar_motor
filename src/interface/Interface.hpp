@@ -20,7 +20,7 @@
 #include "io/SerialIO.hpp"
 
 // Packet lengths
-constexpr uint16_t CONTROL_PACKET_LEN = 27;
+constexpr uint16_t CONTROL_PACKET_LEN = 26;
 constexpr uint16_t STATUS_PACKET_LEN = 21;
 
 #pragma pack(push, 1)
@@ -34,7 +34,6 @@ struct ControlPacket {
     float mechanical_angle_y;
     float associated_angle_x;   // LDM sample-time angle [rad] (AngleTracker)
     float associated_angle_y;
-    uint8_t reached_p2p_target;
 };
 
 struct StatusPacket {
@@ -118,12 +117,11 @@ private:
     void handleYFrequencySet(float* data);
     void handleXPhaseSet(float* data);
     void handleYPhaseSet(float* data);
-    void handleEnableScanEngine();
-    void handleDisableScanEngine();
+    void handleScanEngineOn();
+    void handleScanEngineOff();
+    void handleSeekNeutral();
     void handleBeginCoarseScanning();
     void handleStopCoarseScanning();
-    void handleBeginPoint2PointScanning();
-    void handleStopPoint2PointScanning();
     void handleSetPoint2PointTarget(float* data);
     void handleUpdateCoarseScanCentre(float* data);
 

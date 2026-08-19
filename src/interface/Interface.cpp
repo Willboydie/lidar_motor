@@ -158,23 +158,20 @@ void Interface::onCommand(uint8_t cmd, uint8_t* payload, uint32_t length) {
         case Y_PHASE_SET_CMD:
             if (requirePayloadFloats(length, 1)) handleYPhaseSet(data);
             break;
-        case ENABLE_SCANENGINE_CMD:
-            handleEnableScanEngine();
+        case SEEK_NEUTRAL_CMD:
+            handleSeekNeutral();
             break;
-        case DISABLE_SCANENGINE_CMD:
-            handleDisableScanEngine();
+        case SCANENGINE_ON_CMD:
+            handleScanEngineOn();
+            break;
+        case SCANENGINE_OFF_CMD:
+            handleScanEngineOff();
             break;
         case BEGIN_COARSE_SCANNING_CMD:
             handleBeginCoarseScanning();
             break;
         case STOP_COARSE_SCANNING_CMD:
             handleStopCoarseScanning();
-            break;
-        case BEGIN_POINT2POINT_SCANNING_CMD:
-            handleBeginPoint2PointScanning();
-            break;
-        case STOP_POINT2POINT_SCANNING_CMD:
-            handleStopPoint2PointScanning();
             break;
         case SET_POINT2POINT_TARGET_CMD:
             if (requirePayloadFloats(length, 2)) handleSetPoint2PointTarget(data);
@@ -200,7 +197,6 @@ void Interface::sendControlPacket() {
         sensorY.getLatestRotorAngle(),
         angleTrackerX.getAssociatedAngle(),
         angleTrackerY.getAssociatedAngle(),
-        static_cast<uint8_t>(scanEngine.getReachedP2PTarget())
     };
     Serial.write(reinterpret_cast<uint8_t*>(&packet), sizeof(packet));
 }
@@ -402,11 +398,11 @@ void Interface::handleYPhaseSet(float* data) {
     coarseScan.setYPhase(data[0]);
 }
 
-void Interface::handleEnableScanEngine() {
+void Interface::handleScanEngineOn() {
     scanEngine.on();
 }
 
-void Interface::handleDisableScanEngine() {
+void Interface::handleScanEngineOff() {
     scanEngine.off();
 }
 
@@ -418,12 +414,8 @@ void Interface::handleStopCoarseScanning() {
     scanEngine.stopCoarseScanning();
 }
 
-void Interface::handleBeginPoint2PointScanning() {
-    scanEngine.beginPoint2PointScanning();
-}
-
-void Interface::handleStopPoint2PointScanning() {
-    scanEngine.stopPoint2PointScanning();
+void Interface::handleSeekNeutral() {
+    scanEngine.seekNeutral();
 }
 
 void Interface::handleSetPoint2PointTarget(float* data) {

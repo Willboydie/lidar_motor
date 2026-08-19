@@ -13,11 +13,8 @@ enum class ScanMode {
 
 enum class DynamicRoutine {
     NONE = 0,
-    ENABLING = 1,
-    DISABLING = 2,
-    WINDING_UP_TO_COARSE = 3,
-    TAPERING_DOWN_FROM_COARSE = 4,
-    SEEKING_POINT2POINT_START = 5,
+    WINDING_UP_TO_COARSE = 1,
+    TAPERING_DOWN_FROM_COARSE = 2,
 };
 
 class ScanEngine {
@@ -28,12 +25,11 @@ public:
 
     void on();
     void off();
+    void seekNeutral();
     void enable() { enabled = true; }
     void disable() { enabled = false; }
     void beginCoarseScanning();
     void stopCoarseScanning();
-    void beginPoint2PointScanning();
-    void stopPoint2PointScanning();
 
     void updatePosition(float dt);
     void updateVelocity(float dt);
@@ -45,7 +41,6 @@ public:
     float getCoarseScanCentreY() { return baseAngleY; }
     float getPoint2PointTargetX() { return adaptiveTargetX; }
     float getPoint2PointTargetY() { return adaptiveTargetY; }
-    bool getReachedP2PTarget() { return hit; }
 
     DynamicRoutine getDynamicRoutine() { return dynamicRoutine; }
     ScanMode getScanMode() { return scanMode; }
@@ -57,19 +52,13 @@ private:
     SCurve& sCurveX;
     SCurve& sCurveY;
 
-    bool atNeutral = false;
-    bool seekingNeutral = false;
     bool enabled = false;
 
     void dynamicRoutineUpdate();
 
-    template <typename T>
-    void moveToNeutralThenDo(T&& _proceedingTask);
     void windUpToCoarse();
     void taperDownFromCoarse();
     void establishAsPoint2PointBase();
-
-    bool atTarget();
 
     ScanMode scanMode = ScanMode::OFF;
     DynamicRoutine dynamicRoutine = DynamicRoutine::NONE;
@@ -85,7 +74,6 @@ private:
     float adaptiveTargetY = 0.0f;
     float checkpointAngleX = 0.0f;
     float checkpointAngleY = 0.0f;
-    bool hit = true;
 
     const float neutralX = DEFAULT_NEUTRAL_X_POS;
     const float neutralY = DEFAULT_NEUTRAL_Y_POS;

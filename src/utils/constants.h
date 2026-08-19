@@ -109,7 +109,7 @@
 #define BAUD_RATE 460800
 
 // Debug
-#define DEFAULT_DEBUG_SETTING true
+#define DEFAULT_DEBUG_SETTING false
 
 // EXACT VALUES
 #define _2_SQRT3 1.15470053838f

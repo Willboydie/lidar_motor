@@ -98,7 +98,7 @@ inline void scan_engine_test() {
         sensorX, sensorY,
         currentSenseX, currentSenseY,
         ldm, pwmDriverX, pwmDriverY,
-        faultManager, stateMachine);
+        faultManager, stateMachine, scanEngine);
     Interface interface(
         stateMachine,
         focControllerX, focControllerY,
@@ -124,7 +124,7 @@ inline void scan_engine_test() {
         stateMachine.controlMode = ANGLE;
     }
 
-    Debug::msg("Connect realtime_plotter.py — Enable ScanEngine, then Begin Coarse");
+    Debug::msg("Connect realtime_plotter.py — Enable motors, Scan Engine On, then Begin Coarse");
 
     uint32_t control_us = micros();
     uint32_t status_ms = millis();

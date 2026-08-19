@@ -68,16 +68,16 @@ Payload `—` means `len = 0`. Units are SI unless noted. Angles are mechanical,
 ### 3.1 System
 
 
-| ID  | Hex    | Command               | Payload | Action                                                               |
-| --- | ------ | --------------------- | ------- | -------------------------------------------------------------------- |
-| 1   | `0x01` | `DISABLE_ENABLE`      | —       | Toggle motor enable.                                                 |
-| 2   | `0x02` | `SET_DEBUG_MODE`      | —       | Toggle debug text frames (§7). Default: on.                          |
-| 3   | `0x03` | `TOGGLE_CONTROL_MODE` | —       | Toggle angle ↔ velocity control. Default: angle.                     |
-| 27  | `0x1B` | `SLEEP`               | —       | Disable actuators and enter MCU sleep.                               |
-| 28  | `0x1C` | `WAKE`                | —       | Exit sleep. Does not re-enable; send `DISABLE_ENABLE`.               |
-| 29  | `0x1D` | `RESTART`             | —       | Sleep then wake. Does not re-enable.                                 |
-| 30  | `0x1E` | `ENTER_BOOTLOADER`    | —       | Disable, then jump to the MCU bootloader.                            |
-| 31  | `0x1F` | `GET_ERROR_MSG`       | —       | Write each active fault as raw ASCII, then clear all faults.         |
+| ID  | Hex    | Command               | Payload | Action                                                            |
+| --- | ------ | --------------------- | ------- | ----------------------------------------------------------------- |
+| 1   | `0x01` | `DISABLE_ENABLE`      | —       | Toggle motor enable.                                              |
+| 2   | `0x02` | `SET_DEBUG_MODE`      | —       | Toggle debug text frames (§7). Default: on.                       |
+| 3   | `0x03` | `TOGGLE_CONTROL_MODE` | —       | Toggle angle ↔ velocity control. Default: angle.                  |
+| 27  | `0x1B` | `SLEEP`               | —       | Disable actuators and enter MCU sleep.                            |
+| 28  | `0x1C` | `WAKE`                | —       | Exit sleep. Does not re-enable; send `DISABLE_ENABLE`.            |
+| 29  | `0x1D` | `RESTART`             | —       | Sleep then wake. Does not re-enable.                              |
+| 30  | `0x1E` | `ENTER_BOOTLOADER`    | —       | Disable, then jump to the MCU bootloader.                         |
+| 31  | `0x1F` | `GET_ERROR_MSG`       | —       | Write each active fault as a debug packet, then clear all faults. |
 
 
 
@@ -110,7 +110,7 @@ Payload `—` means `len = 0`. Units are SI unless noted. Angles are mechanical,
 | 26  | `0x1A` | `TARGET_Y_SET`            | `float` | Axis Y setpoint (rad or rad/s).               |
 
 
-Direct `TARGET_*` writes are overridden while Scan Engine is commanding the axes.
+Direct `TARGET_*` writes are overridden while Scan Engine updates are enabled.
 
 ### 3.3 Rangefinder
 
@@ -136,25 +136,24 @@ Direct `TARGET_*` writes are overridden while Scan Engine is commanding the axes
 
 ### 3.4 Scan Engine
 
-Enable Scan Engine before coarse or point-to-point motion. Typical sequence: **enable motors → enable Scan Engine → begin coarse or set a P2P target**.
+`ENABLE` / `DISABLE` gate target writes. `ON` / `OFF` select the path. Typical sequence: **enable motors → Scan Engine on → begin coarse or set a P2P target**. Motor enable also sets the Scan Engine update gate; motor disable clears it.
 
 
-| ID  | Hex    | Command                      | Payload            | Action                                                                                                        |
-| --- | ------ | ---------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| 33  | `0x21` | `ENABLE_SCANENGINE`          | —                  | Enable. Homing to the neutral pose, then idle in point-to-point.                                              |
-| 34  | `0x22` | `DISABLE_SCANENGINE`         | —                  | Home to neutral, then disable.                                                                                |
-| 35  | `0x23` | `BEGIN_COARSE_SCANNING`      | —                  | Home, then wind up the Lissajous coarse scan.                                                                 |
-| 36  | `0x24` | `X_AMPLITUDE_SET`            | `float`            | Coarse X amplitude (rad). Range 0…0.6.                                                                        |
-| 37  | `0x25` | `Y_AMPLITUDE_SET`            | `float`            | Coarse Y amplitude (rad). Range 0…0.6.                                                                        |
-| 38  | `0x26` | `X_FREQUENCY_SET`            | `float`            | Coarse X frequency (Hz).                                                                                      |
-| 39  | `0x27` | `Y_FREQUENCY_SET`            | `float`            | Coarse Y frequency (Hz).                                                                                      |
-| 40  | `0x28` | `X_PHASE_SET`                | `float`            | Coarse X phase (rad).                                                                                         |
-| 41  | `0x29` | `Y_PHASE_SET`                | `float`            | Coarse Y phase (rad).                                                                                         |
-| 42  | `0x2A` | `STOP_COARSE_SCANNING`       | —                  | Taper the coarse scan, then return to point-to-point.                                                         |
-| 43  | `0x2B` | `BEGIN_POINT2POINT_SCANNING` | —                  | Enter / resume point-to-point (homes first).                                                                  |
-| 44  | `0x2C` | `STOP_POINT2POINT_SCANNING`  | —                  | Cancel the current P2P move and home.                                                                         |
-| 45  | `0x2D` | `SET_POINT2POINT_TARGET`     | `float x, float y` | New P2P target (rad). Must lie inside the angle limits.                                                       |
-| 46  | `0x2E` | `UPDATE_COARSE_SCAN_CENTRE`  | `float x, float y` | Move the coarse-scan centre. Valid only in coarse mode; centre ± amplitude must stay inside the angle limits. |
+| ID  | Hex    | Command                     | Payload            | Action                                                                                                                         |
+| --- | ------ | --------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| 35  | `0x23` | `BEGIN_COARSE_SCANNING`     | —                  | Wind up a Lissajous scan about the current pose. Requires `ON`. Rejected if the current pose ± amplitude exceeds angle limits. |
+| 36  | `0x24` | `X_AMPLITUDE_SET`           | `float`            | Coarse X amplitude (rad). Range 0…0.6.                                                                                         |
+| 37  | `0x25` | `Y_AMPLITUDE_SET`           | `float`            | Coarse Y amplitude (rad). Range 0…0.6.                                                                                         |
+| 38  | `0x26` | `X_FREQUENCY_SET`           | `float`            | Coarse X frequency (Hz).                                                                                                       |
+| 39  | `0x27` | `Y_FREQUENCY_SET`           | `float`            | Coarse Y frequency (Hz).                                                                                                       |
+| 40  | `0x28` | `X_PHASE_SET`               | `float`            | Coarse X phase (rad).                                                                                                          |
+| 41  | `0x29` | `Y_PHASE_SET`               | `float`            | Coarse Y phase (rad).                                                                                                          |
+| 42  | `0x2A` | `STOP_COARSE_SCANNING`      | —                  | Taper the coarse scan, then seek neutral in point-to-point.                                                                    |
+| 43  | `0x2B` | `SCANENGINE_ON`             | —                  | Enter point-to-point and seek the neutral pose.                                                                                |
+| 44  | `0x2C` | `SCANENGINE_OFF`            | —                  | Leave Scan Engine mode immediately (does not home).                                                                            |
+| 45  | `0x2D` | `SET_POINT2POINT_TARGET`    | `float x, float y` | New P2P target (rad). Valid only in point-to-point mode; must lie inside the angle limits.                                     |
+| 46  | `0x2E` | `UPDATE_COARSE_SCAN_CENTRE` | `float x, float y` | Move the coarse-scan centre. Valid only in coarse mode; centre ± amplitude must stay inside the angle limits.                  |
+| 47  | `0x2F` | `SEEK_NEUTRAL`              | —                  | Command a P2P move to the neutral pose. Valid only in point-to-point mode.                                                     |
 
 
 ---
@@ -172,7 +171,7 @@ Telemetry uses the same three-byte prefix as commands. `len` is the payload size
 
 | Header  | Hex    | Rate  | Payload | Total     |
 | ------- | ------ | ----- | ------- | --------- |
-| Control | `0x55` | 1 kHz | 27 B    | 30 B      |
+| Control | `0x55` | 1 kHz | 26 B    | 29 B      |
 | Status  | `0xAA` | 10 Hz | 21 B    | 24 B      |
 | Debug   | `0xFF` | event | `len` B | 3 + `len` |
 
@@ -187,7 +186,7 @@ Closed-loop telemetry.
 | Offset | Type     | Field                | Unit                    |
 | ------ | -------- | -------------------- | ----------------------- |
 | 0      | `uint8`  | `header`             | `0x55`                  |
-| 1      | `uint16` | `len`                | 27                      |
+| 1      | `uint16` | `len`                | 26                      |
 | 3      | `float`  | `target_angle_x`     | rad                     |
 | 7      | `float`  | `target_angle_y`     | rad                     |
 | 11     | `uint16` | `distance`           | cm                      |
@@ -195,7 +194,6 @@ Closed-loop telemetry.
 | 17     | `float`  | `mechanical_angle_y` | rad, live rotor         |
 | 21     | `float`  | `associated_angle_x` | rad, at last LDM sample |
 | 25     | `float`  | `associated_angle_y` | rad, at last LDM sample |
-| 29     | `uint8`  | `reached_p2p_target` | 1 = at P2P target       |
 
 
 
@@ -239,18 +237,14 @@ Housekeeping.
 `dynamic_routine`
 
 
-| Value | Routine                      |
-| ----- | ---------------------------- |
-| 0     | None                         |
-| 1     | Enabling                     |
-| 2     | Disabling                    |
-| 3     | Seeking coarse start         |
-| 4     | Winding up to coarse         |
-| 5     | Tapering down from coarse    |
-| 6     | Seeking point-to-point start |
+| Value | Routine                   |
+| ----- | ------------------------- |
+| 0     | None                      |
+| 1     | Winding up to coarse      |
+| 2     | Tapering down from coarse |
 
 
-Non-zero `dynamic_routine` means a transition is in progress; wait for `0` before issuing the next scan-mode command.
+Non-zero `dynamic_routine` means a coarse wind-up or taper is in progress. Wait for `0` before issuing `BEGIN_COARSE_SCANNING` or `STOP_COARSE_SCANNING`.
 
 ---
 
@@ -293,5 +287,3 @@ decoded text:   At neutral.
 
 C: `memcpy(text, payload, len); text[len] = '\0';`  
 Python: `text = payload.decode("ascii")`
-
-

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdint.h>
+#include "../utils/constants.h"
+#include "../utils/cmd_defs.h"
 
 static constexpr uint8_t FAULT_CODE_LIMIT = 255;
 static constexpr uint8_t FAULT_CODE_MAX = FAULT_CODE_LIMIT;

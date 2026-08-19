@@ -13,7 +13,7 @@ ScanEngine::ScanEngine(FOCController& _focControllerX, FOCController& _focContro
 void ScanEngine::on() {
     if (scanMode == ScanMode::OFF) {
         scanMode = ScanMode::POINT2POINT;
-        dynamicRoutine = DynamicRoutine::ENABLING;
+        seekNeutral();
         Debug::msg("ScanEngine turned on.");
     } else {
         Debug::msg("ScanEngine already on.");
@@ -22,8 +22,8 @@ void ScanEngine::on() {
 
 void ScanEngine::off() {
     if (scanMode != ScanMode::OFF) {
-        scanMode = ScanMode::POINT2POINT;
-        dynamicRoutine = DynamicRoutine::DISABLING;
+        scanMode = ScanMode::OFF;
+        dynamicRoutine = DynamicRoutine::NONE;
         coarseScan.resetTime();
         Debug::msg("ScanEngine turned off.");
     } else {
@@ -33,7 +33,7 @@ void ScanEngine::off() {
 
 void ScanEngine::beginCoarseScanning() {
     if (scanMode == ScanMode::OFF) {
-        Debug::msg("Enable ScanEngine to begin coarse scanning.");
+        Debug::msg("Turn ScanEngine on to begin coarse scanning.");
         return;
     }
     
@@ -44,7 +44,6 @@ void ScanEngine::beginCoarseScanning() {
 
     establishAsPoint2PointBase();
     coarseScan.resetTime();
-    hit = false;
     scanMode = ScanMode::COARSE;
     dynamicRoutine = DynamicRoutine::WINDING_UP_TO_COARSE;
     Debug::msg("Beginning coarse windup.");
@@ -57,22 +56,11 @@ void ScanEngine::stopCoarseScanning() {
     dynamicRoutine = DynamicRoutine::TAPERING_DOWN_FROM_COARSE;
 }
 
-void ScanEngine::beginPoint2PointScanning() {
-    if (scanMode == ScanMode::OFF) {
-        Debug::msg("Enable ScanEngine to begin point2point scanning.");
-        return;
-    }
-    if (scanMode != ScanMode::POINT2POINT) {
-        scanMode = ScanMode::POINT2POINT;
-    }
-    dynamicRoutine = DynamicRoutine::SEEKING_POINT2POINT_START;
-}
-
-void ScanEngine::stopPoint2PointScanning() {
+void ScanEngine::seekNeutral() {
     if (scanMode != ScanMode::POINT2POINT) {
         return;
     }
-    dynamicRoutine = DynamicRoutine::SEEKING_POINT2POINT_START;
+    setNewPoint2PointTarget(neutralX, neutralY);
 }
 
 
@@ -89,9 +77,6 @@ void ScanEngine::updatePosition(float dt) {
         case ScanMode::POINT2POINT:
             sCurveX.updatePosition(dt, dx);
             sCurveY.updatePosition(dt, dy);
-            if (sCurveX.movementFinished() && sCurveY.movementFinished()) {
-                hit = atTarget();
-            }
             break;
         case ScanMode::OFF:
             break;
@@ -121,19 +106,6 @@ void ScanEngine::updateVelocity(float dt) {
 // ------------------- Dynamic Routine Management --------------------------------
 void ScanEngine::dynamicRoutineUpdate() {
     switch (dynamicRoutine) {
-        case DynamicRoutine::ENABLING:
-            moveToNeutralThenDo([this]() {
-                dynamicRoutine = DynamicRoutine::NONE;
-            });
-            break;
-
-        case DynamicRoutine::DISABLING:
-            moveToNeutralThenDo([this]() {
-                dynamicRoutine = DynamicRoutine::NONE;
-                scanMode = ScanMode::OFF;
-                establishAsPoint2PointBase();
-            });
-            break;
 
         case DynamicRoutine::WINDING_UP_TO_COARSE:
             windUpToCoarse();
@@ -141,12 +113,6 @@ void ScanEngine::dynamicRoutineUpdate() {
 
         case DynamicRoutine::TAPERING_DOWN_FROM_COARSE:
             taperDownFromCoarse();
-            break;
-
-        case DynamicRoutine::SEEKING_POINT2POINT_START:
-            moveToNeutralThenDo([this]() {
-                dynamicRoutine = DynamicRoutine::NONE;
-            });
             break;
 
         case DynamicRoutine::NONE:
@@ -158,24 +124,6 @@ void ScanEngine::dynamicRoutineUpdate() {
 }
 
 // ------------------- dynamic flow helpers --------------------------
-template <typename T>
-void ScanEngine::moveToNeutralThenDo(T&& _proceedingTask) {
-    if (!seekingNeutral) {
-        scanMode = ScanMode::POINT2POINT;
-        setNewPoint2PointTarget(neutralX, neutralY);
-        seekingNeutral = true;
-        atNeutral = false;
-    } else {
-        if (atNeutral) {
-            seekingNeutral = false;
-            atNeutral = false;
-            _proceedingTask();
-        } else if (atTarget()) {
-            atNeutral = true;
-            Debug::msg("At neutral.");
-        }
-    }
-}
 
 void ScanEngine::taperDownFromCoarse() {
     dilationTerm *= 0.999f;
@@ -183,8 +131,8 @@ void ScanEngine::taperDownFromCoarse() {
         dilationTerm = 0.005f;
         Debug::msg("Dilation term reached 0.005.");
         scanMode = ScanMode::POINT2POINT;
-        dynamicRoutine = DynamicRoutine::SEEKING_POINT2POINT_START;
-        establishAsPoint2PointBase();
+        dynamicRoutine = DynamicRoutine::NONE;
+        seekNeutral();
     }
 }
 
@@ -199,6 +147,14 @@ void ScanEngine::windUpToCoarse() {
 
 
 // -------------------- Control Setters --------------------------
+
+void ScanEngine::establishAsPoint2PointBase() {
+    baseAngleX = focControllerX.getMechanicalAngle();
+    baseAngleY = focControllerY.getMechanicalAngle();
+    sCurveX.setTimeToEnd();
+    sCurveY.setTimeToEnd();
+}
+
 void ScanEngine::setNewPoint2PointTarget(float _angleX, float _angleY) {
     if (scanMode != ScanMode::POINT2POINT) {
         Debug::msg("Cannot set point2point target when not in point2point mode.");
@@ -216,9 +172,6 @@ void ScanEngine::setNewPoint2PointTarget(float _angleX, float _angleY) {
     float Dy = adaptiveTargetY - baseAngleY;
     sCurveX.setNewDisplacement(Dx);
     sCurveY.setNewDisplacement(Dy);
-    hit = false;
-    focControllerX.resetRollingMeanErrorFilter();
-    focControllerY.resetRollingMeanErrorFilter();
 }
 
 void ScanEngine::updateCoarseScanCentre(float _centreX, float _centreY) {
@@ -232,21 +185,4 @@ void ScanEngine::updateCoarseScanCentre(float _centreX, float _centreY) {
     } else {
         Debug::msg("Coarse scan centre outwith bounds (or limit function not implemented)");
     }
-}
-
-void ScanEngine::establishAsPoint2PointBase() {
-    baseAngleX = focControllerX.getMechanicalAngle();
-    baseAngleY = focControllerY.getMechanicalAngle();
-    dx = 0.0f;
-    dy = 0.0f;
-    sCurveX.setTimeToEnd();
-    sCurveY.setTimeToEnd();
-}
-
-// -------------------- hit test -------------------------------
-bool ScanEngine::atTarget() {
-    bool xHit, yHit;
-    xHit = focControllerX.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
-    yHit = focControllerY.getRollingAngularError() < TARGET_ANGLE_TOLERANCE;
-    return xHit && yHit;
 }

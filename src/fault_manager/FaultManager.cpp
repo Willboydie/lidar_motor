@@ -86,7 +86,22 @@ const char* FaultManager::getMessage(FaultCode fault_code) const {
     }
 }
 
-
+constexpr uint16_t MESSAGE_MAX_LEN = 256;
 void FaultManager::sendErrorMessage(FaultCode fault_code) {
-    Serial.write(getMessage(fault_code));
+    const char* text = getMessage(fault_code);
+    if (text == nullptr) {
+        return;
+    }
+    uint16_t n = static_cast<uint16_t>(strlen(text));
+    if (n > MESSAGE_MAX_LEN) {
+        n = MESSAGE_MAX_LEN;
+    }
+    uint8_t packet[3 + MESSAGE_MAX_LEN];
+    packet[0] = DEBUG_PACKET_HEADER;
+    packet[1] = static_cast<uint8_t>(n);
+    packet[2] = static_cast<uint8_t>(n >> 8);
+    for (uint16_t i = 0; i < n; ++i) {
+        packet[3 + i] = static_cast<uint8_t>(text[i]);
+    }
+    Serial.write(packet, static_cast<size_t>(3) + n);
 }
