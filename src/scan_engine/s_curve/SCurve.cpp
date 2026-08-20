@@ -114,5 +114,6 @@ void SCurve::setNewDisplacement(float new_D) {
 float SCurve::compute_tau() {
     float tau_a = sqrtf(fabsf(D) * _1_2amax);
     float tau_j = _cuberoot(fabsf(D) * _1_2jmax);
-    return fmaxf(tau_a, tau_j);
+    float tau_v = _cuberoot(fabsf(D) * _1_2vmax);
+    return fmaxf(fmaxf(tau_a, tau_j), tau_v);
 }

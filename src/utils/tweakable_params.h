@@ -40,6 +40,7 @@
 // S-Curve Parameters
 #define JERK_MAX 10.0f
 #define ACCEL_MAX 5.0f
+#define VELOCITY_MAX 3.0f
 
 // Scan Path Parameters
 #define DEFAULT_X_SCAN_FREQUENCY 1.5f
@@ -91,8 +92,8 @@
 // Angle Limits
 #define DEFAULT_X_LOWER_LIMIT 2.5f
 #define DEFAULT_X_UPPER_LIMIT 4.2f
-#define DEFAULT_Y_LOWER_LIMIT 2.6f
-#define DEFAULT_Y_UPPER_LIMIT 3.9f
+#define DEFAULT_Y_LOWER_LIMIT 2.0f
+#define DEFAULT_Y_UPPER_LIMIT 4.2f
 
 #define DEFAULT_ANGLE_ERROR_MEAN_WINDOW_LENGTH 20
 #define TARGET_ANGLE_TOLERANCE 0.001f

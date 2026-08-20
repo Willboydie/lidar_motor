@@ -1,6 +1,5 @@
 Enable/disable should be separate toggles.
-fix broken hit flag - registers a hit before it has reached the target. --- probably remove the flag all together...
-fix broken transition between non-neutral position to out-of-bounds coarse start attempt.
+add ldm return frequency and signal strength to the control packets.
 
 Fault Manager: decide on proper fault logging procedure. Suggested:
     1. Fault != None
@@ -13,4 +12,3 @@ LiDAR CONFIG TESTING
 
 E X T R A   F E A T U R E S
 - Garmin: exporting correlation records + angle lists (+ timestamps?)
-- vibration detection and shutdown
