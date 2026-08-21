@@ -15,6 +15,8 @@ Interface::Interface(
     FaultManager& _faultManager,
     SystemManager& _systemManager,
     CoarseScan& _coarseScan,
+    SCurve& _sCurveX,
+    SCurve& _sCurveY,
     ScanEngine& _scanEngine
 )
 : stateMachine(_stateMachine)
@@ -30,6 +32,8 @@ Interface::Interface(
 , faultManager(_faultManager)
 , systemManager(_systemManager)
 , coarseScan(_coarseScan)
+, sCurveX(_sCurveX)
+, sCurveY(_sCurveY)
 , scanEngine(_scanEngine)
 , serialIO(Serial)
 , parser(*this, cmdPayload, CMD_PAYLOAD_MAX)
@@ -178,6 +182,9 @@ void Interface::onCommand(uint8_t cmd, uint8_t* payload, uint32_t length) {
             break;
         case UPDATE_COARSE_SCAN_CENTRE_CMD:
             if (requirePayloadFloats(length, 2)) handleUpdateCoarseScanCentre(data);
+            break;
+        case SET_VELOCITY_MAX_CMD:
+            if (requirePayloadFloats(length, 1)) handleSetVelocityMax(data);
             break;
         default:
             faultManager.addFault(FAULT_CMD_INVALID);
@@ -424,4 +431,9 @@ void Interface::handleSetPoint2PointTarget(float* data) {
 
 void Interface::handleUpdateCoarseScanCentre(float* data) {
     scanEngine.updateCoarseScanCentre(data[0], data[1]);
+}
+
+void Interface::handleSetVelocityMax(float* data) {
+    sCurveX.setVelocityMax(data[0]);
+    sCurveY.setVelocityMax(data[0]);
 }

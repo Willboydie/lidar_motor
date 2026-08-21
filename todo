@@ -1,10 +1,6 @@
 Enable/disable should be separate toggles.
-add ldm return frequency and signal strength to the control packets.
+Add ldm return frequency and signal strength to the control packets.
 
-Fault Manager: decide on proper fault logging procedure. Suggested:
-    1. Fault != None
-    2. getFaultMessages
-    3. Save to log file available to the developer.
 
 LiDAR CONFIG TESTING
     1. Take identical scans in the car park using each of the GARMIN's preset configs.

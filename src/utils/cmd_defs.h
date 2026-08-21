@@ -53,6 +53,7 @@
 #define SET_POINT2POINT_TARGET_CMD 0b00101101
 #define UPDATE_COARSE_SCAN_CENTRE_CMD 0b00101110
 #define SEEK_NEUTRAL_CMD 0b00101111
+#define SET_VELOCITY_MAX_CMD 0b00110000
 
 // Outgoing binary packet headers (distinct from each other and from command bytes)
 #define CONTROL_PACKET_HEADER 0b01010101  // 0x55 — hot-path closed-loop telemetry

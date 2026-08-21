@@ -18,6 +18,7 @@
 #include "utils/cmd_defs.h"
 #include "parser/Parser.hpp"
 #include "io/SerialIO.hpp"
+#include "scan_engine/s_curve/SCurve.hpp"
 
 // Packet lengths
 constexpr uint16_t CONTROL_PACKET_LEN = 26;
@@ -68,6 +69,8 @@ public:
         FaultManager& _faultManager,
         SystemManager& _systemManager,
         CoarseScan& _coarseScan,
+        SCurve& _sCurveX,
+        SCurve& _sCurveY,
         ScanEngine& _scanEngine
     );
 
@@ -124,6 +127,7 @@ private:
     void handleStopCoarseScanning();
     void handleSetPoint2PointTarget(float* data);
     void handleUpdateCoarseScanCentre(float* data);
+    void handleSetVelocityMax(float* data);
 
     StateMachine& stateMachine;
     FOCController& focControllerX;
@@ -138,6 +142,8 @@ private:
     FaultManager& faultManager;
     SystemManager& systemManager;
     CoarseScan& coarseScan;
+    SCurve& sCurveX;
+    SCurve& sCurveY;
     ScanEngine& scanEngine;
 
     static constexpr uint32_t CMD_PAYLOAD_MAX = 16;

@@ -154,7 +154,7 @@ Direct `TARGET_*` writes are overridden while Scan Engine updates are enabled.
 | 45  | `0x2D` | `SET_POINT2POINT_TARGET`    | `float x, float y` | New P2P target (rad). Valid only in point-to-point mode; must lie inside the angle limits.                                     |
 | 46  | `0x2E` | `UPDATE_COARSE_SCAN_CENTRE` | `float x, float y` | Move the coarse-scan centre. Valid only in coarse mode; centre ± amplitude must stay inside the angle limits.                  |
 | 47  | `0x2F` | `SEEK_NEUTRAL`              | —                  | Command a P2P move to the neutral pose. Valid only in point-to-point mode.                                                     |
-
+| 48  | `0x30` | `SET_VELOCITY_MAX`          | `float`            | Set the maximum velocity reached by the module during a P2P movement                                                           |
 
 ---
 

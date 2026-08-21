@@ -55,7 +55,7 @@ Interface interface(
     currentSenseX, currentSenseY,
     ldm, angleTrackerX, angleTrackerY,
     faultManager, systemManager,
-    movingLissa, scanEngine);
+    movingLissa, sCurveX, sCurveY, scanEngine);
 
 void setup() {
     Serial.begin(BAUD_RATE);

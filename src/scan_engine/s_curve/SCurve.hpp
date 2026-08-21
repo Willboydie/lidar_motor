@@ -18,6 +18,8 @@ public:
     void setTimeToEnd() { t = tau; }
     float movementFinished() { return t >= tau; }
 
+    void setVelocityMax(float new_vmax) { vmax = new_vmax; _1_2vmax = 0.5f / vmax; }
+
 private:
     float compute_tau();
 
@@ -35,10 +37,10 @@ private:
 
     const float jmax = JERK_MAX;
     const float amax = ACCEL_MAX;
-    const float vmax = VELOCITY_MAX;
+    float vmax = VELOCITY_MAX;
     const float _1_2amax = 0.5f / amax;
     const float _1_2jmax = 0.5f / jmax;
-    const float _1_2vmax = 0.5f / vmax;
+    float _1_2vmax = 0.5f / vmax;
     
     float J = 0.0f;
     float D = 0.0f;
